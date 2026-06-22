@@ -5,22 +5,18 @@ import subprocess
 import requests
 
 from backend.app.compliance import deterministic_compliance_check
-from backend.app.config import get_manifest
-from backend.app.risk_guardrails import has_policy_gap_marker
+from backend.app.escalation import has_policy_gap_marker
 from backend.app.schemas import Observation
 from tests.test_support import ERROR_API, start_error_server
 
 
-def test_compliance_guardrail_from_manifest() -> None:
-    terms = get_manifest()["risk_guardrails"]["high_risk_terms"]
+def test_compliance_guardrail_from_structure() -> None:
     result = deterministic_compliance_check(
         draft_action_type="final_answer",
-        draft={"outcome": "resolved", "answer": "I completed a configured high-risk access request."},
+        draft={"outcome": "resolved", "risk_assessment": {"policy_gap": True}},
         observations=[],
-        high_risk_terms=[r"high-risk access"],
     )
-    assert result and result["compliant"] is False
-    assert terms, "Manifest must define risk guardrail terms"
+    assert result and result["required_next_action"] == "escalate"
 
     allowed_policy = Observation(
         id="obs_policy",
@@ -33,17 +29,15 @@ def test_compliance_guardrail_from_manifest() -> None:
         draft_action_type="final_answer",
         draft={"outcome": "resolved", "answer": "Use the documented troubleshooting steps."},
         observations=[allowed_policy],
-        high_risk_terms=terms,
     )
     assert clean and clean["compliant"] is True and clean["required_next_action"] == "allow"
 
-    high_risk_with_unrelated_allow = deterministic_compliance_check(
-        draft_action_type="final_answer",
-        draft={"outcome": "resolved", "answer": "Use the documented steps and request a restricted-change."},
+    unsupported_escalation = deterministic_compliance_check(
+        draft_action_type="escalate",
+        draft={"requested_actions": ["missing_policy_action"], "handoff_payload": {}},
         observations=[allowed_policy],
-        high_risk_terms=[r"restricted-change"],
     )
-    assert high_risk_with_unrelated_allow and high_risk_with_unrelated_allow["required_next_action"] == "escalate"
+    assert unsupported_escalation and unsupported_escalation["required_next_action"] == "reject"
 
 
 def test_policy_gap_marker_requires_true_value_or_marker_text() -> None:
@@ -74,7 +68,7 @@ def test_api_error_exposes_traceback() -> None:
 
 
 TESTS = [
-    test_compliance_guardrail_from_manifest,
+    test_compliance_guardrail_from_structure,
     test_policy_gap_marker_requires_true_value_or_marker_text,
     test_api_error_exposes_traceback,
 ]

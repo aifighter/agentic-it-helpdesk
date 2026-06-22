@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .action_schemas import EscalateAction
-from .evidence_guards import has_unread_kb_match
-from .risk_guardrails import has_unmodeled_high_risk_text, is_unmodeled_high_risk_escalation, state_high_risk_text
+from .schemas import EscalateAction
 from .state import SessionState
+from .tools import GenericRuntime, ToolResult
 
 
 def validate_escalation(state: SessionState, action: EscalateAction, manifest: dict[str, Any]) -> str | None:
@@ -14,16 +13,22 @@ def validate_escalation(state: SessionState, action: EscalateAction, manifest: d
     observations = {obs.id: obs for obs in state.observations}
     requested_actions = escalation_requested_actions(action)
     unmodeled_actions = escalation_unmodeled_actions(action)
+    policy_gap_escalation = has_policy_gap_marker(action.model_dump()) or bool(
+        action.risk_assessment.policy_gap or action.risk_assessment.unmodeled_high_risk_request
+    )
+
     if not evidence_ids:
         return "escalate rejected: missing evidence_ids."
     if not all(obs_id in observations for obs_id in evidence_ids | policy_ids):
         return "escalate rejected: referenced observation id does not exist."
     if mismatch := escalation_mapping_mismatch(action):
         return mismatch
+
     registered_actions = registered_policy_actions(manifest)
     unknown_actions = sorted(action_id for action_id in requested_actions if action_id not in registered_actions)
     if unknown_actions:
         return f"escalate rejected: requested_actions contains unregistered policy action(s): {', '.join(unknown_actions)}."
+
     if requested_actions:
         if not policy_ids:
             return (
@@ -39,18 +44,18 @@ def validate_escalation(state: SessionState, action: EscalateAction, manifest: d
                 f"escalate rejected: policy_evidence_ids do not cover requested_actions: {', '.join(missing_policy)}. "
                 "Cite the existing matching policy_result observation ids, or call policy_tool.evaluate for each missing requested action."
             )
-    policy_gap_escalation = is_unmodeled_high_risk_escalation(manifest, state, action.model_dump())
+
     if unmodeled_actions and not policy_gap_escalation:
-        return "escalate rejected: unmodeled_actions requires policy_gap / unmodeled_high_risk_request in reason, risk_assessment, or handoff_payload."
-    if has_unmodeled_high_risk_text(manifest, f"{state_high_risk_text(state)} {action.model_dump_json()}") and not requested_actions and not unmodeled_actions:
+        return "escalate rejected: unmodeled_actions requires structured policy_gap or unmodeled_high_risk_request."
+    if policy_gap_escalation and not (requested_actions or unmodeled_actions):
         return (
-            "escalate rejected: high-risk access/change request is missing action mapping. "
+            "escalate rejected: policy_gap / unmodeled_high_risk_request requires action mapping. "
             "Planner must set requested_actions for exact registered policy actions or unmodeled_actions for policy gaps; runtime will not infer actions from keywords."
         )
     if has_unread_kb_match(state, evidence_ids) and not policy_gap_escalation:
         return "escalate rejected: file_tool.grep found a KB match, but planner has not read the matched KB article. Use file_tool.read before escalation."
-    if not policy_ids and "policy" in action.reason.lower() and not policy_gap_escalation:
-        return "escalate rejected: policy-based escalation must cite policy_evidence_ids."
+    if not policy_ids and requested_actions:
+        return "escalate rejected: requested_actions requires policy_evidence_ids."
     if not action.handoff_payload:
         return "escalate rejected: missing handoff_payload."
     return None
@@ -84,3 +89,69 @@ def registered_policy_actions(manifest: dict[str, Any]) -> set[str]:
         for item in manifest.get("planner_hints", {}).get("policy_actions", [])
         if item.get("action")
     }
+
+
+def has_policy_gap_marker(value: Any) -> bool:
+    markers = {"policy_gap", "unmodeled_high_risk_request"}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if key_text in markers and item is True:
+                return True
+            if has_policy_gap_marker(item):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(has_policy_gap_marker(item) for item in value)
+    if isinstance(value, str):
+        text = value.lower()
+        return any(marker in text for marker in markers)
+    return False
+
+
+def has_unread_kb_match(state: SessionState, evidence_ids: set[str] | None = None) -> bool:
+    matched_paths = {
+        item.get("path")
+        for obs in state.observations
+        if obs.tool == "file_tool" and obs.operation == "grep" and isinstance(obs.data.get("output"), list)
+        and (evidence_ids is None or obs.id in evidence_ids)
+        for item in obs.data["output"]
+        if item.get("path")
+    }
+    if not matched_paths:
+        return False
+    read_paths = {
+        obs.data.get("tool_calls", [{}])[0].get("input", {}).get("path")
+        for obs in state.observations
+        if obs.tool == "file_tool" and obs.operation == "read"
+    }
+    return not bool(matched_paths & read_paths)
+
+
+def compose_escalation_reply(team: str, payload: dict[str, Any], state: SessionState) -> str:
+    employee = state.working_state.get("employee", {})
+    requested = payload.get("requested_actions") or []
+    requested_text = ", ".join(requested) if requested else payload.get("summary") or "用户报告的问题"
+    approvals = sorted(
+        {
+            approval
+            for item in state.observations
+            if item.type == "policy_result"
+            for approval in item.data.get("required_approvals", [])
+        }
+    )
+    approval_text = f"需要审批：{', '.join(approvals)}。" if approvals else "当前 agent 未接入足够的专门数据源或处理工具，需要人工 triage。"
+    person = employee.get("name") or state.user_email or "该员工"
+    business_context = state.messages[-1]["content"] if state.messages else ""
+    return (
+        f"这个请求不能由 agent 直接完成，我已升级给 {team}。\n\n"
+        f"请求项：{requested_text.rstrip('。.!?')}。\n"
+        f"员工：{person}（{state.user_email or 'unknown'}）。\n"
+        f"原因：{approval_text}\n"
+        f"业务背景：{business_context}\n\n"
+        f"我已经把员工信息、{'policy 结果、' if approvals else ''}已查询的工具证据和对话上下文放入 handoff payload，下一位处理人可以直接接手。"
+    )
+
+
+def create_handoff_for_escalation(runtime: GenericRuntime, payload: dict[str, Any]) -> ToolResult:
+    return runtime.handoff.create(payload)

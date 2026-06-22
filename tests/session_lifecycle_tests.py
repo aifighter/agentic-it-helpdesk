@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from backend.app.action_schemas import parse_agent_action
 from backend.app.agent import HelpdeskAgent
 from backend.app.config import get_manifest
 from backend.app.finalization import validate_final_answer
 from backend.app.observations import user_request_observation
-from backend.app.schemas import AgentStep, Observation
+from backend.app.schemas import AgentStep, Observation, parse_agent_action
 from backend.app.state import SessionState
 
 
@@ -43,22 +42,6 @@ def test_acknowledged_final_answer_contract() -> None:
     )
     rejection = validate_final_answer(state, old_evidence, manifest)
     assert rejection and "must not cite" in rejection
-
-    risky_ack = parse_agent_action(
-        {
-            "action_type": "final_answer",
-            "outcome": "acknowledged",
-            "proposed_action": "none",
-            "answer": "I granted a configured high-risk access request.",
-            "evidence_ids": [],
-            "policy_evidence_ids": [],
-            "decision_rationale": "Risky acknowledgement.",
-            "confidence": 0.9,
-            "thought_summary": "Invalid acknowledgement.",
-        }
-    )
-    rejection = validate_final_answer(state, risky_ack, {**manifest, "risk_guardrails": {"high_risk_terms": [r"high-risk access"]}})
-    assert rejection and "high-risk" in rejection
 
 
 def test_case_state_lifecycle_contract() -> None:
@@ -141,13 +124,34 @@ def test_resolved_final_answer_requires_evidence_beyond_user_request() -> None:
     assert rejection and "beyond the current user request" in rejection
 
 
-def test_max_steps_unmodeled_high_risk_escalates() -> None:
+def test_max_steps_structured_escalation_signal_escalates() -> None:
     agent = HelpdeskAgent()
     state = SessionState(session_id="test", user_email="priya.narayan@company.test")
-    state.remember("user", "我要 Jenkins admin，CEO 要求的。")
+    state.remember("user", "需要人工处理的请求。")
+    state.working_state["last_escalation_signal"] = {
+        "title": "Unmodeled access request",
+        "team": "Access Review",
+        "reason": "policy_gap / unmodeled_high_risk_request.",
+        "requested_actions": [],
+        "unmodeled_actions": [
+            {
+                "description": "Planner reported an unmodeled privileged access request.",
+                "system": None,
+                "risk_type": "privileged_access",
+                "reason": "No registered policy action covers the requested privilege level.",
+            }
+        ],
+        "risk_assessment": {
+            "risk_level": "high",
+            "risk_type": "privileged_access",
+            "policy_gap": True,
+            "unmodeled_high_risk_request": True,
+        },
+        "handoff_payload": {"policy_gap": True},
+    }
     payload = agent._max_steps_payload(state)
     assert payload["outcome"] == "escalated"
-    assert "unmodeled_high_risk_request" in payload["escalation"].get("risk_type", "")
+    assert payload["escalation"]["risk_assessment"]["policy_gap"] is True
     assert "错误信息" not in payload["reply"]
 
 
@@ -204,6 +208,6 @@ TESTS = [
     test_case_state_lifecycle_contract,
     test_acknowledged_response_hides_current_user_request_observation,
     test_resolved_final_answer_requires_evidence_beyond_user_request,
-    test_max_steps_unmodeled_high_risk_escalates,
+    test_max_steps_structured_escalation_signal_escalates,
     test_rejected_terminal_actions_remain_visible_in_timeline,
 ]

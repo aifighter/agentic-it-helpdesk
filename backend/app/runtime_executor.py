@@ -4,8 +4,7 @@ import json
 import re
 from typing import Any
 
-from .action_schemas import ToolAction
-from .manifest_matching import kb_topic_matches, policy_action_keyword_matches
+from .schemas import ToolAction
 from .state import SessionState
 from .tools import GenericRuntime, ToolResult
 
@@ -31,47 +30,6 @@ def execute_tool_action(state: SessionState, runtime: GenericRuntime, manifest: 
     if tool == "policy_tool" and operation == "evaluate":
         return runtime.policy.evaluate(args["action"], normalized_policy_context(state, args.get("context", {})))
     raise PermissionError(f"Unknown tool operation: {tool}.{operation}")
-
-
-def tool_relevance_warnings(state: SessionState, manifest: dict[str, Any], action: ToolAction) -> list[str]:
-    warnings: list[str] = []
-    if action.tool == "file_tool" and action.operation == "grep":
-        args = action.arguments
-        if args.get("path", "data/knowledge_base") == "data/knowledge_base" and not kb_query_relevant(state, manifest, args.get("query", "")):
-            warnings.append("file_tool.grep query appears low relevance based on manifest knowledge_base_topics; this is planner guidance only, not a security rejection.")
-        if kb_search_exhausted(state):
-            warnings.append("Previous knowledge base searches returned no matches; consider another evidence source, ask_user, or final/escalate with existing evidence.")
-    if action.tool == "policy_tool" and action.operation == "evaluate":
-        if not policy_action_relevant(state, manifest, action.arguments.get("action", "")):
-            warnings.append("policy_tool.evaluate action appears low relevance based on manifest policy hints; this is planner guidance only, not a security rejection.")
-    return warnings
-
-
-def kb_search_exhausted(state: SessionState) -> bool:
-    empty_greps = [
-        obs
-        for obs in state.observations
-        if obs.tool == "file_tool" and obs.operation == "grep" and obs.ok and not obs.data.get("output")
-    ]
-    return len(empty_greps) >= 2
-
-
-def kb_query_relevant(state: SessionState, manifest: dict[str, Any], query: str) -> bool:
-    text = f"{query} {' '.join(message['content'] for message in state.messages[-4:] if message['role'] == 'user')}"
-    return kb_topic_matches(text, manifest.get("knowledge_base_topics", []))
-
-
-def policy_action_relevant(state: SessionState, manifest: dict[str, Any], action: str) -> bool:
-    hints = manifest.get("planner_hints", {})
-    user_text = " ".join(message["content"] for message in state.messages[-8:] if message["role"] == "user")
-    if policy_action_keyword_matches(action, user_text, hints):
-        return True
-    evidence_text = " ".join(
-        obs.summary
-        for obs in state.observations
-        if obs.ok and obs.visible and obs.tool in {"file_tool", "http_tool"}
-    )
-    return policy_action_keyword_matches(action, evidence_text, hints)
 
 
 def normalized_policy_context(state: SessionState, context: dict[str, Any]) -> dict[str, Any]:

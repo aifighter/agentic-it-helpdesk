@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import os
 
-from backend.app.action_schemas import parse_agent_action
+from backend.app.schemas import parse_agent_action
 from backend.app.config import get_manifest
 from backend.app import llm as llm_module
 from backend.app.llm import DeepSeekClient
 from backend.app.planner_contract import tool_schemas
-from backend.app.runtime_executor import execute_tool_action, tool_relevance_warnings, validate_user_scoped_sql
+from backend.app.runtime_executor import execute_tool_action, validate_user_scoped_sql
 from backend.app.state import SessionState
 from backend.app.tools import GenericRuntime
 
@@ -87,7 +87,7 @@ def test_http_allowlist() -> None:
         raise AssertionError("http_tool must reject non-allowlisted methods")
 
 
-def test_relevance_warning_is_soft() -> None:
+def test_runtime_has_no_relevance_warning_control_flow() -> None:
     manifest = get_manifest()
     runtime = GenericRuntime(manifest)
     state = SessionState(session_id="test", user_email="alex.chen@company.test")
@@ -101,8 +101,9 @@ def test_relevance_warning_is_soft() -> None:
             "thought_summary": "probe docs",
         }
     )
-    warnings = tool_relevance_warnings(state, manifest, action)
-    assert warnings, "Low-relevance KB search should produce a runtime warning"
+    import backend.app.runtime_executor as runtime_executor
+
+    assert not hasattr(runtime_executor, "tool_relevance_warnings")
     result = execute_tool_action(state, runtime, manifest, action)
     assert result.call.tool == "file_tool"
 
@@ -147,6 +148,6 @@ TESTS = [
     test_sql_guardrail,
     test_file_allowlist,
     test_http_allowlist,
-    test_relevance_warning_is_soft,
+    test_runtime_has_no_relevance_warning_control_flow,
     test_server_configured_llm_api_key_is_used,
 ]

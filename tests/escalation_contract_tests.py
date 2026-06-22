@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from backend.app.action_schemas import parse_agent_action
 from backend.app.config import get_manifest
-from backend.app.escalation_validation import validate_escalation
+from backend.app.escalation import validate_escalation
 from backend.app.finalization import enrich_escalation_action
 from backend.app.planner_contract import planner_payload, planner_system_prompt
-from backend.app.schemas import Observation
+from backend.app.schemas import Observation, parse_agent_action
 from backend.app.state import SessionState
 
 
@@ -58,7 +57,7 @@ def test_unmodeled_high_risk_escalation_allows_policy_gap() -> None:
         }
     )
     rejection = validate_escalation(state, missing_mapping, manifest)
-    assert rejection and "missing action mapping" in rejection
+    assert rejection and "requires action mapping" in rejection
 
 
 def test_escalation_is_not_enriched_with_inferred_actions() -> None:
@@ -82,7 +81,7 @@ def test_escalation_is_not_enriched_with_inferred_actions() -> None:
     enriched = enrich_escalation_action(state, action, manifest)
     assert enriched.handoff_payload.get("requested_actions") is None
     rejection = validate_escalation(state, enriched, manifest)
-    assert rejection and "missing action mapping" in rejection
+    assert rejection and "requires action mapping" in rejection
 
 
 def test_requested_actions_require_registered_policy_evidence() -> None:

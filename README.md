@@ -88,6 +88,7 @@ React Frontend
 
 - 业务知识放在 `domain_manifest.yaml`、policy、KB、数据文件和 prompt 中。
 - Python 不维护业务 workflow。
+- Python 不用关键词匹配决定控制流或 guardrail；关键词只存在于检索工具内部，或作为 manifest/prompt 给 planner 的提示。
 - Runtime 只做 schema、安全边界、证据和 policy guardrail。
 - Planner 决定下一步查什么，不由后端写死工具调用顺序。
 - Handoff 不是 planner-visible tool，只能由通过校验的 `EscalateAction` 触发。
@@ -194,13 +195,12 @@ runtime_rejection                           status=rejected
 - `agentic_ai_take_home_candidate_instructions_v20260421_01.html`: 原始作业说明。
 - `domain_manifest.yaml`: 数据源、工具 allowlist、planner hints、risk guardrails。
 - `backend/app/agent.py`: planner-executor loop。
-- `backend/app/action_schemas.py`: LLM action schema。
+- `backend/app/schemas.py`: Chat、observation、tool trace、LLM action、compliance 等结构化 schema。
 - `backend/app/planner_contract.py`: planner prompt、payload、tool schema。
 - `backend/app/runtime_executor.py`: planner-visible tool dispatch。
 - `backend/app/finalization.py`: final / ask_user / escalation 构建和校验。
-- `backend/app/escalation_validation.py`: escalation evidence / policy 校验。
-- `backend/app/compliance.py`: Mandatory Compliance Checker。
-- `backend/app/handoff_executor.py`: approved escalation terminal executor。
+- `backend/app/escalation.py`: escalation evidence / policy 校验、reply 组装、approved handoff terminal executor。
+- `backend/app/compliance.py`: Mandatory Compliance Checker 和终止动作 compliance gate。
 - `frontend/src/main.jsx`: 主聊天界面。
 - `frontend/src/inspector.jsx`: 诊断面板。
 - `tests/run_tests.py`: runtime/unit tests。
