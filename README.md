@@ -1,154 +1,308 @@
 # Agentic IT Helpdesk Agent
 
-Runnable take-home project implementing **v3.0: Autonomous Planner-Executor Agent + Generic Runtime + Guardrails**.
+这是一个用于 take-home 笔试的自主 IT Helpdesk Agent 项目。当前实现目标是展示：
 
-The backend has one planner path: a live LLM structured JSON planner. There is no deterministic planner, no issue-type router, no business-specific handler branch, and no alternate planner path. If the LLM provider fails, times out, returns invalid JSON, or is not configured, `/api/chat` returns HTTP 500 with a full traceback and the frontend displays that traceback.
+**Autonomous LLM Planner + Generic Runtime + Guardrails**
 
-## Architecture
+项目重点不是写一套固定 workflow，而是让 LLM planner 在通用工具和运行时约束下自主规划下一步。后端只有一条 planner 路径：**live LLM structured JSON planner**。没有 deterministic fallback，没有 `issue_type` 路由，没有 `_handle_vpn` / `_handle_okta` 这类业务分支。
+
+如果 LLM provider 失败、超时、返回非法 JSON、缺少 API key，`/api/chat` 会返回 HTTP 500，并把完整 traceback 暴露给前端。开发阶段不伪造成功，不吞异常。
+
+## 当前架构
 
 ```text
-React UI
+React 前端
   -> FastAPI /api/chat
-    -> HelpdeskAgent loop
-      -> live LLM planner returns structured JSON:
+    -> HelpdeskAgent planner-executor loop
+      -> Live LLM planner 输出结构化 JSON action
          tool_call | ask_user | final_answer | escalate
-      -> runtime validates action schema and hard safety boundaries
-      -> GenericRuntime executes generic tools
+      -> Pydantic schema 校验 action
+      -> Runtime 校验工具边界和终止动作约束
+      -> GenericRuntime 执行通用工具
          file_tool | http_tool | sql_tool | search_tool | policy_tool
-      -> observations enter session memory
-      -> final_answer / escalate drafts pass Mandatory Compliance Checker
-      -> approved EscalateAction triggers runtime handoff executor
-      -> loop ends at final / ask_user / escalate / max_steps
+      -> 工具结果变成 observation，进入 session memory
+      -> final_answer / escalate 进入 Mandatory Compliance Checker
+      -> EscalateAction 通过后，由 runtime terminal handoff executor 创建 handoff payload
+      -> loop 结束于 final / ask_user / escalate / max_steps
 ```
 
-Domain behavior comes from `domain_manifest.yaml`, Markdown KB files, structured policy rules, status APIs, resolution history, and the SQLite user directory. Python code does not contain business-specific risk word lists or deterministic workflow plans.
+业务知识来自配置和数据源：
 
-Planner-visible tools are limited to `file_tool`, `http_tool`, `sql_tool`, `search_tool`, and `policy_tool`. `handoff` is not a planner-visible tool and must not be called through `tool_call`. Human escalation is expressed as an `EscalateAction`; after `validate_escalation` and the Mandatory Compliance Checker approve it, the runtime terminal handoff executor creates the local handoff payload.
+- `domain_manifest.yaml`
+- `data/policy/rules.yaml`
+- `data/knowledge_base/**/*.md`
+- `data/resolution_history/*.json`
+- `data/generated/employees.db`
+- `/api/status/services` 和 `/api/status/changes`
+- planner prompt 中的通用使用规则
 
-## Important Files
+Python 代码不维护业务专用 workflow，不用 Python 业务黑白名单作为安全核心。
 
-- `AGENTS.md`: project architecture constraints.
-- `design_versions.md`: recorded design history and v3.0 plan.
-- `agentic_ai_take_home_candidate_instructions_v20260421_01.html`: original assignment.
-- `domain_manifest.yaml`: data sources, tool allowlists, planner hints, and configured risk guardrail terms.
-- `backend/app/agent.py`: short planner-executor orchestration loop.
-- `backend/app/action_schemas.py`: Pydantic planner action schemas.
-- `backend/app/planner_contract.py`: planner prompt, payload, and tool schema exposure.
-- `backend/app/runtime_executor.py`: planner-visible generic tool dispatch plus safety guardrails.
-- `backend/app/handoff_executor.py`: terminal executor for approved escalations.
-- `backend/app/compliance.py`: Mandatory Compliance Checker and config-driven deterministic checks.
-- `backend/app/tools.py`: low-level generic implementations, including the handoff primitive used only by the terminal executor.
-- `frontend/src/main.jsx`: chat UI with visible diagnostics and traceback display.
-- `tests/run_tests.py`: unit/runtime contract tests only.
-- `evals/run_live_llm_eval.py`: real `/api/chat` live LLM evaluation.
+## Planner 和 Runtime 的边界
 
-## Data Sources
+Planner 负责：
 
-| Source | Implementation |
+- 读取 conversation、observations、working_state、domain manifest 摘要、tool schemas。
+- 自主决定下一步 action。
+- 自主决定是否调用工具、问用户、最终回答或升级。
+- 生成结构化 JSON，不能输出自由文本 action。
+
+Runtime 负责：
+
+- Pydantic schema 校验。
+- 文件路径 allowlist。
+- HTTP host/method allowlist。
+- SQL 只读和 user scoped 查询。
+- terminal action 的 evidence / policy evidence 校验。
+- Mandatory Compliance Checker。
+- approved escalation 的 handoff executor。
+
+Runtime 不负责：
+
+- 根据关键词推断业务 issue type。
+- 根据关键词自动补 `requested_actions`。
+- 决定固定工具调用顺序。
+- 把某类问题路由到固定 handler。
+
+## Planner-Visible Tools
+
+LLM planner 只能通过 `tool_call` 调用这些通用工具：
+
+| Tool | 用途 |
 |---|---|
-| Knowledge base | Markdown files under `data/knowledge_base/`, accessed through `file_tool` |
-| System status | `/api/status/services` and `/api/status/changes`, accessed through `http_tool` |
-| User directory | SQLite database `data/generated/employees.db`, accessed through `sql_tool` |
-| Resolution history | JSON archive searched by `search_tool` |
-| Policy / rules | YAML rules evaluated by `policy_tool` |
+| `file_tool` | 读取 allowlisted KB / 文档文件 |
+| `http_tool` | 调用 allowlisted HTTP API，例如 status API |
+| `sql_tool` | 只读查询用户目录 SQLite |
+| `search_tool` | 检索 resolution history |
+| `policy_tool` | 评估 registered policy action |
 
-## Guardrails
+`handoff` 不是 planner-visible tool。Planner 不能通过 `tool_call` 调用 `handoff_tool.create`。
 
-Hard runtime boundaries:
+人工升级流程是：
 
-- `file_tool`: path must stay inside manifest allowlisted roots.
-- `http_tool`: host and method must be allowlisted.
-- `sql_tool`: only `SELECT`, only allowlisted tables, user-directory queries must be scoped to the current user.
-- `final_answer`: resolved answers must cite non-policy evidence and an `allowed=true` policy observation.
-- `escalate`: must cite evidence and include a structured handoff payload.
-- Mandatory Compliance Checker reviews every final/escalate draft before release.
-- Handoff executor only runs after an `EscalateAction` passes runtime validation and compliance; the planner cannot directly call `handoff_tool.create`.
+```text
+planner 输出 EscalateAction
+  -> validate_escalation
+  -> Mandatory Compliance Checker
+  -> handoff executor 调用底层 handoff create
+  -> 返回 outcome=escalated
+```
 
-Soft planner guidance:
+## 前端诊断展示
 
-- Low-relevance KB searches and low-relevance policy actions are not hard rejected. Runtime records visible `runtime_warning` observations so the planner can self-correct in the next loop.
+前端会展示可见诊断过程，但不会展示 hidden chain-of-thought。
 
-The frontend shows planner step summaries, tool trace, evidence summary, observations, warnings, runtime rejections, compliance results, and decision rationale. It does not show hidden chain-of-thought.
+可见内容包括：
 
-## Setup
+- planner step timeline
+- tool trace
+- evidence summary
+- observations / warnings / runtime rejections
+- compliance checker result
+- decision rationale
+- handoff payload 摘要
+- 后端 500 的完整 traceback
 
-Python is managed with `uv`.
+当 planner 生成 `final_answer`、`ask_user` 或 `escalate` 但被 runtime 拒绝时，流程里会显示两个连续 block：
+
+```text
+action: escalate / final_answer / ask_user  status=rejected
+runtime_rejection                           status=rejected
+```
+
+这样可以看清楚：不是系统“什么都没做”，而是 planner 先尝试了某个终止动作，随后 runtime 拒绝并把原因反馈给下一轮 planner。
+
+## 数据源
+
+| Source | 实现 |
+|---|---|
+| Knowledge base | `data/knowledge_base/` 下的 Markdown，通过 `file_tool` 访问 |
+| System status | `/api/status/services` 和 `/api/status/changes`，通过 `http_tool` 访问 |
+| User directory | `data/generated/employees.db`，通过 `sql_tool` 访问 |
+| Resolution history | JSON archive，通过 `search_tool` 检索 |
+| Policy / rules | `data/policy/rules.yaml`，通过 `policy_tool` 评估 |
+
+## 重要文件
+
+- `AGENTS.md`: 项目架构约束和 review blockers。
+- `design_versions.md`: 方案演进记录。
+- `agentic_ai_take_home_candidate_instructions_v20260421_01.html`: 原始作业要求。
+- `domain_manifest.yaml`: 数据源、工具 allowlist、planner hints、risk guardrails。
+- `backend/app/agent.py`: 短小的 planner-executor loop。
+- `backend/app/action_schemas.py`: LLM action 的 Pydantic schema。
+- `backend/app/planner_contract.py`: planner prompt、planner payload、tool schema 暴露。
+- `backend/app/runtime_executor.py`: planner-visible tool dispatch 和运行时边界。
+- `backend/app/escalation_validation.py`: escalation schema/evidence/policy 校验。
+- `backend/app/finalization.py`: final / ask_user / escalation 构建和终止动作校验。
+- `backend/app/compliance.py`: Mandatory Compliance Checker。
+- `backend/app/handoff_executor.py`: approved EscalateAction 的 terminal executor。
+- `backend/app/tools.py`: 底层通用工具实现。
+- `frontend/src/main.jsx`: 前端主界面。
+- `frontend/src/inspector.jsx`: 诊断面板和 evidence/source 展示。
+- `tests/run_tests.py`: runtime/unit contract tests。
+- `evals/run_live_llm_eval.py`: 真实 `/api/chat` live LLM eval。
+- `scripts/seed_data.py`: 生成 mock user directory SQLite。
+
+## 环境准备
+
+Python 使用 `uv` 管理。
 
 ```bash
 uv sync
 uv run python scripts/seed_data.py
 ```
 
-Create `.env`:
+前端使用 `pnpm`：
+
+```bash
+cd frontend
+pnpm install
+```
+
+## LLM 配置
+
+项目使用 OpenAI-compatible `/chat/completions` 风格接口。推荐使用通用 `LLM_*` 环境变量：
+
+```bash
+LLM_API_KEY=your_key_here
+LLM_MODEL=deepseek-v4-pro
+LLM_BASE_URL=https://api.deepseek.com
+LLM_THINKING=disabled
+LLM_MAX_TOKENS=4096
+LLM_CONNECT_TIMEOUT_SECONDS=10
+LLM_READ_TIMEOUT_SECONDS=120
+STATUS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+兼容旧变量名：
 
 ```bash
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_THINKING=disabled
-STATUS_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Backend:
+如果使用 Qwen / DashScope / 百炼这类兼容接口，可以改成相应 base URL 和 model，并保持：
+
+```bash
+LLM_THINKING=disabled
+```
+
+不要把真实 API key 提交到 git。
+
+## 启动
+
+后端：
 
 ```bash
 uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Health:
+健康检查：
 
 ```bash
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/llm/health
 ```
 
-Frontend:
+前端：
 
 ```bash
 cd frontend
-pnpm install
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`.
+打开：
 
-## Tests vs Live Eval
+```text
+http://127.0.0.1:5173
+```
 
-`tests/run_tests.py` proves runtime contracts only. It does not prove LLM planning quality.
+## 测试和 Live Eval 的边界
+
+`tests/run_tests.py` 只证明 runtime contracts，不证明 LLM planner 的真实规划能力。
 
 ```bash
 uv run python tests/run_tests.py
 ```
 
-It covers action schema validation, file/HTTP/SQL guardrails, config-driven deterministic compliance checks, soft relevance warnings, and API traceback exposure when the LLM provider is unavailable.
+覆盖重点：
 
-`evals/run_live_llm_eval.py` is the real planner evaluation. It calls `/api/chat` with the unique live LLM planner path and reports outcome, tool trace, evidence count, compliance result, latency, and traceback. Provider errors are marked as failures or `provider_error`; they are never counted as pass and there is no alternate planner path.
+- LLM action schema。
+- tool call schema。
+- SQL read-only。
+- user directory SQL 必须 scoped to current user。
+- file path allowlist。
+- HTTP host/path/method allowlist。
+- final/escalate evidence 和 policy evidence 校验。
+- unmodeled high-risk escalation。
+- handoff executor 不是 planner-visible tool。
+- terminal action 被 runtime 拒绝时，流程中保留 action block。
+
+`evals/run_live_llm_eval.py` 才是真实 planner eval。它调用 `/api/chat`，走唯一 live LLM planner path。
 
 ```bash
 uv run python evals/run_live_llm_eval.py
 ```
 
-## Demo Prompts
+Live eval 会报告：
+
+- user message
+- outcome
+- assistant reply
+- tool trace
+- evidence count
+- compliance result
+- handoff payload 关键字段
+- latency
+- provider error / traceback
+
+如果 LLM provider SSL EOF、timeout、API error，case 必须失败或标记为 provider error；不会 fallback，也不会算 pass。
+
+## Demo 问题
 
 ```text
-My VPN keeps disconnecting every 10-15 minutes. I'm working remotely and can't access internal tools.
+我的 VPN 每 10-15 分钟就会断开。我现在远程办公，访问不了内部工具。
 ```
 
 ```text
-Salesforce has been loading extremely slowly since yesterday. My teammates in the Chicago office are seeing the same thing.
+Salesforce 从昨天开始加载特别慢，Chicago 办公室的同事也遇到了一样的问题。
 ```
 
 ```text
-I just joined the Data Engineering team and need access to the Snowflake production database and internal Grafana dashboards for on-call analytics.
+我需要 Snowflake production database 和 Grafana dashboards 的访问权限，用于 on-call analytics。
 ```
 
 ```text
-Since the IT maintenance window last Friday, our team's automated data pipeline has been failing. Jenkins jobs time out and Tableau reports are stale.
+Grafana 的权限，老板叫我获取 admin 权限，你给我操作一下。
 ```
 
-## Known Risks
+```text
+从上周五 IT maintenance window 之后，我们团队的自动化数据 pipeline 一直失败。Jenkins jobs timeout，下游 Tableau reports 也 stale。
+```
 
-- Live eval depends on DeepSeek availability, network stability, SSL behavior, and latency.
-- LLM planner behavior is non-deterministic even with low temperature.
-- Compliance checker also uses the LLM after deterministic checks pass, so finalization can fail if the provider fails.
-- Live eval costs time and provider tokens; runtime tests are fast but intentionally do not validate planner intelligence.
+```text
+你好
+```
+
+```text
+谢谢
+```
+
+## 清理说明
+
+可以删除的生成物 / 缓存：
+
+- `scripts/__pycache__/`
+- `backend/**/__pycache__/`
+- `tests/**/__pycache__/`
+- `frontend/dist/`
+- `.runtime/logs/`
+
+不建议删除：
+
+- `scripts/seed_data.py`：用于生成 SQLite mock user directory。
+- `design_versions.md`：设计演进文档。
+- `agentic_ai_take_home_candidate_instructions_v20260421_01.html`：原始作业说明。
+- `domain_manifest.yaml`、`data/`、`backend/`、`frontend/`、`tests/`、`evals/`。
