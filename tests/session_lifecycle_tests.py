@@ -99,8 +99,57 @@ def test_max_steps_unmodeled_high_risk_escalates() -> None:
     assert "错误信息" not in payload["reply"]
 
 
+def test_rejected_terminal_actions_remain_visible_in_timeline() -> None:
+    agent = HelpdeskAgent()
+    state = SessionState(session_id="test", user_email="alex.chen@company.test")
+    final_action = parse_agent_action(
+        {
+            "action_type": "final_answer",
+            "outcome": "resolved",
+            "proposed_action": "vpn_troubleshooting",
+            "answer": "Done.",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+            "decision_rationale": "Missing evidence.",
+            "confidence": 0.7,
+            "thought_summary": "Planner tried final_answer.",
+        }
+    )
+    assert agent._try_final_answer(state, final_action) is None
+    assert state.steps[-2].action_type == "final_answer"
+    assert state.steps[-2].status == "rejected"
+    assert state.steps[-2].thought_summary == "Planner tried final_answer."
+    assert state.steps[-1].action_type == "runtime_rejection"
+    assert state.steps[-1].status == "rejected"
+
+    escalation_action = parse_agent_action(
+        {
+            "action_type": "escalate",
+            "title": "Missing evidence escalation",
+            "team": "IT Helpdesk",
+            "reason": "Need human help.",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+            "handoff_payload": {"summary": "Missing evidence."},
+            "confidence": 0.7,
+            "thought_summary": "Planner tried escalate.",
+        }
+    )
+    assert agent._try_escalation(state, escalation_action) is None
+    assert state.steps[-2].action_type == "escalate"
+    assert state.steps[-2].status == "rejected"
+    assert state.steps[-1].action_type == "runtime_rejection"
+
+    agent._record_action_rejection(state, "ask_user", "Planner tried ask_user.", "ask_user rejected: test.", "Regenerate.")
+    assert state.steps[-2].action_type == "ask_user"
+    assert state.steps[-2].status == "rejected"
+    assert state.steps[-1].action_type == "runtime_rejection"
+    assert state.steps[-1].status == "rejected"
+
+
 TESTS = [
     test_acknowledged_final_answer_contract,
     test_case_state_lifecycle_contract,
     test_max_steps_unmodeled_high_risk_escalates,
+    test_rejected_terminal_actions_remain_visible_in_timeline,
 ]

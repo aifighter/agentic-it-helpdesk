@@ -78,7 +78,7 @@ class HelpdeskAgent:
                 continue
             if isinstance(action, AskUserAction):
                 if rejection := validate_ask_user(state, action, self.manifest):
-                    self._record_runtime_rejection(state, rejection, "ask_user 被 runtime 拒绝，planner 必须说明未接入系统边界并重新追问。")
+                    self._record_action_rejection(state, "ask_user", action.thought_summary, rejection, "planner 必须说明未接入系统边界并重新追问。")
                     continue
                 final_payload = build_ask_user(state, action)
                 break
@@ -124,22 +124,22 @@ class HelpdeskAgent:
 
     def _try_final_answer(self, state: SessionState, action: FinalAnswerAction) -> dict[str, Any] | None:
         if rejection := validate_final_answer(state, action, self.manifest):
-            self._record_runtime_rejection(state, rejection, "final_answer 被 runtime 拒绝，planner 必须补充 evidence/policy 或改为升级/追问。")
+            self._record_action_rejection(state, "final_answer", action.thought_summary, rejection, "planner 必须补充 evidence/policy 或改为升级/追问。")
             return None
         if action.outcome == "acknowledged":
             return build_final_answer(state, action)
         if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="final_answer", draft=action.model_dump(), next_id=self._next_observation_id):
-            self._record_runtime_rejection(state, rejection, "Mandatory compliance checker 拒绝 final_answer，planner 必须继续查询、追问或改为升级。")
+            self._record_action_rejection(state, "final_answer", action.thought_summary, rejection, "Mandatory compliance checker 拒绝 final_answer，planner 必须继续查询、追问或改为升级。")
             return None
         return build_final_answer(state, action)
 
     def _try_escalation(self, state: SessionState, action: EscalateAction) -> dict[str, Any] | None:
         action = enrich_escalation_action(state, action, self.manifest)
         if rejection := validate_escalation(state, action, self.manifest):
-            self._record_runtime_rejection(state, rejection, "escalate 被 runtime 拒绝，planner 必须补充 handoff 所需证据。")
+            self._record_action_rejection(state, "escalate", action.thought_summary, rejection, "planner 必须补充 handoff 所需证据。")
             return None
         if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="escalate", draft=action.model_dump(), next_id=self._next_observation_id):
-            self._record_runtime_rejection(state, rejection, "Mandatory compliance checker 拒绝 escalate 草稿，planner 必须补充证据或重新生成 handoff。")
+            self._record_action_rejection(state, "escalate", action.thought_summary, rejection, "Mandatory compliance checker 拒绝 escalate 草稿，planner 必须补充证据或重新生成 handoff。")
             return None
         return build_escalation(state, self.runtime, action, self._next_observation_id)
 
@@ -147,6 +147,13 @@ class HelpdeskAgent:
         obs = runtime_rejection(self._next_observation_id(), reason, thought)
         state.observations.append(obs)
         append_step(state, action_type="runtime_rejection", thought_summary=thought, status="rejected", observation_id=obs.id)
+        return obs
+
+    def _record_action_rejection(self, state: SessionState, action_type: str, thought: str, reason: str, guidance: str):
+        obs = runtime_rejection(self._next_observation_id(), reason, guidance)
+        state.observations.append(obs)
+        append_step(state, action_type=action_type, thought_summary=thought, status="rejected")
+        append_step(state, action_type="runtime_rejection", thought_summary=guidance, status="rejected", observation_id=obs.id)
         return obs
 
     def _record_runtime_warnings(self, state: SessionState, warnings: list[str], thought: str) -> None:
