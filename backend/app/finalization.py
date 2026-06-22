@@ -45,7 +45,9 @@ def validate_final_answer(state: SessionState, action: FinalAnswerAction, manife
     observations = {obs.id: obs for obs in state.observations}
     if not all(obs_id in observations for obs_id in evidence_ids | policy_ids):
         return "final_answer rejected: referenced observation id does not exist."
-    if has_unread_kb_match(state):
+    if not any(observations[obs_id].type != "user_request" for obs_id in evidence_ids):
+        return "final_answer rejected: resolved answers require non-policy evidence beyond the current user request."
+    if has_unread_kb_match(state, evidence_ids):
         return "final_answer rejected: file_tool.grep found a KB match, but planner has not read the matched KB article. Use file_tool.read before final_answer."
     policy_obs = [observations[obs_id] for obs_id in policy_ids]
     if not any(obs.type == "policy_result" and obs.data.get("allowed") is True for obs in policy_obs):

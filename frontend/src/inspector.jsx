@@ -261,6 +261,7 @@ export function sourceLabel(source) {
     knowledge_base: "知识库",
     system_status: "系统状态",
     user_directory: "用户目录",
+    user_request: "用户请求",
     resolution_history: "历史案例",
     policy_rules: "Policy",
     handoff: "Handoff",

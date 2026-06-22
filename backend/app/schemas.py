@@ -31,7 +31,7 @@ class EvidenceItem(BaseModel):
 
 class Observation(BaseModel):
     id: str
-    type: Literal["tool_result", "runtime_rejection", "runtime_warning", "policy_result", "handoff", "planner_note"]
+    type: Literal["user_request", "tool_result", "runtime_rejection", "runtime_warning", "policy_result", "handoff", "planner_note"]
     ok: bool = True
     summary: str
     tool: str | None = None

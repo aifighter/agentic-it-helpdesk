@@ -47,7 +47,7 @@ def validate_escalation(state: SessionState, action: EscalateAction, manifest: d
             "escalate rejected: high-risk access/change request is missing action mapping. "
             "Planner must set requested_actions for exact registered policy actions or unmodeled_actions for policy gaps; runtime will not infer actions from keywords."
         )
-    if has_unread_kb_match(state) and not policy_gap_escalation:
+    if has_unread_kb_match(state, evidence_ids) and not policy_gap_escalation:
         return "escalate rejected: file_tool.grep found a KB match, but planner has not read the matched KB article. Use file_tool.read before escalation."
     if not policy_ids and "policy" in action.reason.lower() and not policy_gap_escalation:
         return "escalate rejected: policy-based escalation must cite policy_evidence_ids."

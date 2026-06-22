@@ -35,6 +35,26 @@ def tool_observation(next_id: str, result: ToolResult, observation_type: str | N
     return obs
 
 
+def user_request_observation(next_id: str, message: str, user_email: str | None) -> Observation:
+    summary = plain_text(message)[:500]
+    return Observation(
+        id=next_id,
+        type="user_request",
+        ok=True,
+        summary=summary,
+        evidence=[
+            EvidenceItem(
+                source="user_request",
+                title="当前用户请求",
+                summary=summary,
+                metadata={"user_email": user_email or "unknown"},
+            )
+        ],
+        data={"message": message, "user_email": user_email},
+        visible=True,
+    )
+
+
 def runtime_rejection(next_id: str, reason: str, thought: str) -> Observation:
     return Observation(
         id=next_id,

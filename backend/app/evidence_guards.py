@@ -3,11 +3,12 @@ from __future__ import annotations
 from .state import SessionState
 
 
-def has_unread_kb_match(state: SessionState) -> bool:
+def has_unread_kb_match(state: SessionState, evidence_ids: set[str] | None = None) -> bool:
     matched_paths = {
         item.get("path")
         for obs in state.observations
         if obs.tool == "file_tool" and obs.operation == "grep" and isinstance(obs.data.get("output"), list)
+        and (evidence_ids is None or obs.id in evidence_ids)
         for item in obs.data["output"]
         if item.get("path")
     }

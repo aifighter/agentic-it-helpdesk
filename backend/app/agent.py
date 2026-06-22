@@ -29,6 +29,7 @@ from .observations import (
     runtime_warning,
     tool_calls_from_observations,
     tool_observation,
+    user_request_observation,
     update_working_state_from_observation,
     visible_observations,
 )
@@ -64,6 +65,7 @@ class HelpdeskAgent:
 
         start_index = len(state.steps)
         observation_start_index = len(state.observations)
+        state.observations.append(user_request_observation(self._next_observation_id(), message, state.user_email))
         working_state_before_turn = deepcopy(state.working_state)
         final_payload: dict[str, Any] | None = None
         for _ in range(MAX_STEPS):
@@ -215,7 +217,7 @@ class HelpdeskAgent:
     def _response(self, state: SessionState, start_index: int, observation_start_index: int, final_payload: dict[str, Any]) -> ChatResponse:
         step_slice = state.steps[start_index:]
         if final_payload["outcome"] == "acknowledged":
-            observations = visible_observations(state.observations[observation_start_index:])
+            observations = [obs for obs in visible_observations(state.observations[observation_start_index:]) if obs.type != "user_request"]
         else:
             observations = visible_observations(state.observations)
         evidence_ids = list(final_payload.get("evidence_ids", [])) + list(final_payload.get("policy_evidence_ids", []))
