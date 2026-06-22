@@ -324,7 +324,7 @@ function llmHealthLabel(llmHealth, hasClientApiKey) {
     return { tone: "configured", label: "client key ready", title: `${llmHealth.model || "LLM"} 将使用本页面输入的 API key。` };
   }
   if (llmHealth.configured) {
-    return { tone: "missing", label: "enter key", title: "后端已启动。请输入 DeepSeek API key 后再发送。" };
+    return { tone: "configured", label: "server key configured", title: `${llmHealth.model || "LLM"} 服务端 API key 已配置。` };
   }
   return {
     tone: "missing",

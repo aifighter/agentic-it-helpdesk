@@ -163,11 +163,12 @@ pnpm install
 
 项目使用 OpenAI-compatible `/chat/completions` 风格接口。
 
-公网部署或面试 demo 时，直接在前端页面的 `DeepSeek API key` 输入框填写 key。后端不预置、不读取、不兜底使用真实 API key；前端提交问题时会把 key 放在 `/api/chat` 请求体的 `llm_api_key` 字段中，仅用于本次 planner / compliance LLM 调用。
+公网部署或面试 demo 时，推荐直接在前端页面的 `DeepSeek API key` 输入框填写 key。后端不需要预置真实 key；前端提交问题时会把 key 放在 `/api/chat` 请求体的 `llm_api_key` 字段中，仅用于本次 planner / compliance LLM 调用。
 
-后端只通过环境变量配置模型、base URL 和超时，不配置 API key：
+本地或私有部署也可以使用通用 `LLM_*` 环境变量作为服务端默认 key：
 
 ```bash
+LLM_API_KEY=your_key_here
 LLM_MODEL=deepseek-v4-pro
 LLM_BASE_URL=https://api.deepseek.com
 LLM_THINKING=disabled
@@ -178,9 +179,10 @@ STATUS_API_BASE_URL=http://127.0.0.1:8000
 CORS_ALLOW_ORIGINS=https://your-frontend.example.com
 ```
 
-兼容旧模型配置变量名：
+兼容旧变量名：
 
 ```bash
+DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_THINKING=disabled
@@ -192,7 +194,7 @@ DEEPSEEK_THINKING=disabled
 LLM_THINKING=disabled
 ```
 
-不要把真实 API key 提交到 git，也不要写进前端构建产物或后端 `.env`；让评审者在页面输入自己的 key。
+不要把真实 API key 提交到 git。公网部署时尤其不要把 key 写进前端构建产物或后端 `.env`；让评审者在页面输入自己的 key。
 
 ## 启动
 
@@ -211,6 +213,7 @@ curl http://127.0.0.1:8000/api/llm/health
 
 `/api/llm/health` 会返回：
 
+- `server_key_configured`: 服务端是否配置了默认 key。
 - `accepts_client_api_key`: 后端是否接受前端随 `/api/chat` 提交的请求级 key。
 
 公网前后端分开部署时，将前端 origin 加到 `CORS_ALLOW_ORIGINS`，多个 origin 用英文逗号分隔。本地 `localhost:5173` 和 `127.0.0.1:5173` 默认允许。
