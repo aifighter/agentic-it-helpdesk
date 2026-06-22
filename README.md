@@ -228,6 +228,31 @@ pnpm dev
 http://127.0.0.1:5173
 ```
 
+## 公网 Demo 保护
+
+最简单的公网保护是使用 Caddy Basic Auth。项目提供了 [deploy/Caddyfile](/Users/lxc/Desktop/homework/deploy/Caddyfile)，会保护整个站点，包括 `/api/chat`。
+
+部署时只暴露 Caddy 的 80/443 端口，后端和前端仍绑定本机：
+
+```bash
+uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+cd frontend && pnpm dev --host 127.0.0.1 --port 5173
+```
+
+启动 Caddy：
+
+```bash
+PUBLIC_HOST=your-domain.example.com caddy run --config deploy/Caddyfile
+```
+
+当前 Basic Auth 用户名是 `interviewer`。密码不需要写入配置文件；配置中保存的是 bcrypt hash。需要更换密码时：
+
+```bash
+htpasswd -bnB -C 14 interviewer 'new-password'
+```
+
+然后把生成结果中冒号后面的 hash 更新到 `deploy/Caddyfile`。
+
 ## 测试和 Live Eval 的边界
 
 `tests/run_tests.py` 只证明 runtime contracts，不证明 LLM planner 的真实规划能力。

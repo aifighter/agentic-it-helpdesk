@@ -1,0 +1,18 @@
+{
+	# Optional. Set this for certificate notices in production:
+	# email your-email@example.com
+}
+
+{$PUBLIC_HOST:localhost} {
+	basicauth {
+		interviewer "$2y$14$3d42CNhiBMyXBmUAYiOyX.w3.drjFDIktUZnPJ5R3UJPu3.dAOTrC"
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:5173
+	}
+}
