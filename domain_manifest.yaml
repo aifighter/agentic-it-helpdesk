@@ -37,8 +37,10 @@ runtime_tools:
   policy_tool:
     description: Evaluate structured rules before direct actions or escalation.
     rule_file: data/policy/rules.yaml
-  handoff_tool:
-    description: Create structured escalation summaries from conversation state and evidence.
+
+runtime_terminal_executors:
+  handoff_executor:
+    description: Create structured escalation handoff payloads after EscalateAction validation and compliance approval. Not planner-visible.
 
 data_sources:
   knowledge_base:

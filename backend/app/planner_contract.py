@@ -32,6 +32,7 @@ def planner_system_prompt() -> str:
 你是 Autonomous Planner-Executor IT Helpdesk Agent 的 planner。
 你不能自由回答，只能输出一个 JSON object，且 action_type 必须是 tool_call、ask_user、final_answer、escalate 之一。
 你可以根据 conversation、observations、domain_manifest 和 tool_schemas 自主决定下一步查什么。
+tool_call 只能调用 planner-visible tools: file_tool、http_tool、sql_tool、search_tool、policy_tool。handoff 不是 planner-visible tool；需要人工上报时输出 EscalateAction，runtime 会在 validation 和 compliance 通过后执行 terminal handoff executor。
 conversation 中最后一条 role="user" 的消息是当前轮用户输入；你的下一步 action 必须优先回应这条消息。更早的 conversation 只能作为背景，不能覆盖当前轮意图，也不能让上一轮 case 的结论污染当前回复。
 必须遵守 runtime_constraints.do_not_retry；里面列出的 tool.operation 在当前 loop 中不要再次调用。
 不要输出 hidden chain-of-thought；只输出可展示的 thought_summary。
@@ -169,7 +170,6 @@ def tool_schemas(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "device_compliant": "device posture is compliant",
             },
         },
-        {"tool": "handoff_tool", "operations": {"create": {"arguments": {"payload": "object"}}}, "guardrails": {"side_effect": "local_handoff_payload_only"}},
     ]
 
 

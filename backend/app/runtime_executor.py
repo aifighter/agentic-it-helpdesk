@@ -30,8 +30,6 @@ def execute_tool_action(state: SessionState, runtime: GenericRuntime, manifest: 
         return runtime.search.query(args["index"], args["query"], int(args.get("top_k", 3)))
     if tool == "policy_tool" and operation == "evaluate":
         return runtime.policy.evaluate(args["action"], normalized_policy_context(state, args.get("context", {})))
-    if tool == "handoff_tool" and operation == "create":
-        return runtime.handoff.create(args["payload"])
     raise PermissionError(f"Unknown tool operation: {tool}.{operation}")
 
 

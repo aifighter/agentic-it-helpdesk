@@ -14,7 +14,7 @@ const INSPECTOR_TABS = [
   {
     id: "tools",
     label: "工具",
-    help: "Generic runtime 的实际工具轨迹，包括 file/http/sql/search/policy/handoff 的输入摘要和输出摘要。",
+    help: "Generic runtime 的实际执行轨迹，包括 planner-visible file/http/sql/search/policy 工具，以及 escalation 通过后由 runtime 触发的 handoff executor。",
   },
   {
     id: "observations",

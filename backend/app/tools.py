@@ -181,7 +181,7 @@ class PolicyTool:
 class HandoffTool:
     def create(self, payload: dict[str, Any]) -> ToolResult:
         evidence = [EvidenceItem(source="handoff", title=payload.get("title", "Escalation handoff"), summary=payload.get("reason", ""), metadata={"team": payload.get("team")})]
-        return ToolResult(payload, ToolCall(tool="handoff_tool", action="create", input={"title": payload.get("title"), "team": payload.get("team")}, output_summary=summarize(payload)), evidence)
+        return ToolResult(payload, ToolCall(tool="handoff_executor", action="create_handoff", input={"title": payload.get("title"), "team": payload.get("team")}, output_summary=summarize(payload)), evidence)
 
 
 class GenericRuntime:

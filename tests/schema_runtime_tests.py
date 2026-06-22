@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.app.action_schemas import parse_agent_action
 from backend.app.config import get_manifest
+from backend.app.planner_contract import tool_schemas
 from backend.app.runtime_executor import execute_tool_action, tool_relevance_warnings, validate_user_scoped_sql
 from backend.app.state import SessionState
 from backend.app.tools import GenericRuntime
@@ -24,6 +25,25 @@ def test_action_schema() -> None:
         assert "Field required" in str(exc)
     else:
         raise AssertionError("Invalid final_answer action should fail schema validation")
+    try:
+        parse_agent_action(
+            {
+                "action_type": "tool_call",
+                "tool": "handoff_tool",
+                "operation": "create",
+                "arguments": {"payload": {}},
+                "thought_summary": "invalid direct handoff",
+            }
+        )
+    except Exception as exc:
+        assert "handoff_tool" in str(exc)
+    else:
+        raise AssertionError("Planner must not be able to call handoff_tool directly")
+
+
+def test_handoff_not_planner_visible() -> None:
+    exposed_tools = {schema["tool"] for schema in tool_schemas(get_manifest())}
+    assert exposed_tools == {"file_tool", "http_tool", "sql_tool", "search_tool", "policy_tool"}
 
 
 def test_sql_guardrail() -> None:
@@ -85,6 +105,7 @@ def test_relevance_warning_is_soft() -> None:
 
 TESTS = [
     test_action_schema,
+    test_handoff_not_planner_visible,
     test_sql_guardrail,
     test_file_allowlist,
     test_http_allowlist,

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 class ToolAction(BaseModel):
     action_type: Literal["tool_call"]
-    tool: Literal["file_tool", "http_tool", "sql_tool", "search_tool", "policy_tool", "handoff_tool"]
+    tool: Literal["file_tool", "http_tool", "sql_tool", "search_tool", "policy_tool"]
     operation: str
     arguments: dict[str, Any]
     thought_summary: str = "执行通用工具查询。"

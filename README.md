@@ -14,13 +14,16 @@ React UI
          tool_call | ask_user | final_answer | escalate
       -> runtime validates action schema and hard safety boundaries
       -> GenericRuntime executes generic tools
-         file_tool | http_tool | sql_tool | search_tool | policy_tool | handoff_tool
+         file_tool | http_tool | sql_tool | search_tool | policy_tool
       -> observations enter session memory
       -> final_answer / escalate drafts pass Mandatory Compliance Checker
+      -> approved EscalateAction triggers runtime handoff executor
       -> loop ends at final / ask_user / escalate / max_steps
 ```
 
 Domain behavior comes from `domain_manifest.yaml`, Markdown KB files, structured policy rules, status APIs, resolution history, and the SQLite user directory. Python code does not contain business-specific risk word lists or deterministic workflow plans.
+
+Planner-visible tools are limited to `file_tool`, `http_tool`, `sql_tool`, `search_tool`, and `policy_tool`. `handoff` is not a planner-visible tool and must not be called through `tool_call`. Human escalation is expressed as an `EscalateAction`; after `validate_escalation` and the Mandatory Compliance Checker approve it, the runtime terminal handoff executor creates the local handoff payload.
 
 ## Important Files
 
@@ -31,9 +34,10 @@ Domain behavior comes from `domain_manifest.yaml`, Markdown KB files, structured
 - `backend/app/agent.py`: short planner-executor orchestration loop.
 - `backend/app/action_schemas.py`: Pydantic planner action schemas.
 - `backend/app/planner_contract.py`: planner prompt, payload, and tool schema exposure.
-- `backend/app/runtime_executor.py`: generic tool dispatch plus safety guardrails.
+- `backend/app/runtime_executor.py`: planner-visible generic tool dispatch plus safety guardrails.
+- `backend/app/handoff_executor.py`: terminal executor for approved escalations.
 - `backend/app/compliance.py`: Mandatory Compliance Checker and config-driven deterministic checks.
-- `backend/app/tools.py`: generic file, HTTP, SQL, search, policy, and handoff tools.
+- `backend/app/tools.py`: low-level generic implementations, including the handoff primitive used only by the terminal executor.
 - `frontend/src/main.jsx`: chat UI with visible diagnostics and traceback display.
 - `tests/run_tests.py`: unit/runtime contract tests only.
 - `evals/run_live_llm_eval.py`: real `/api/chat` live LLM evaluation.
@@ -58,6 +62,7 @@ Hard runtime boundaries:
 - `final_answer`: resolved answers must cite non-policy evidence and an `allowed=true` policy observation.
 - `escalate`: must cite evidence and include a structured handoff payload.
 - Mandatory Compliance Checker reviews every final/escalate draft before release.
+- Handoff executor only runs after an `EscalateAction` passes runtime validation and compliance; the planner cannot directly call `handoff_tool.create`.
 
 Soft planner guidance:
 

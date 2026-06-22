@@ -6,6 +6,7 @@ from typing import Any
 from .action_schemas import AskUserAction, EscalateAction, FinalAnswerAction
 from .evidence_guards import has_unread_kb_match
 from .escalation_reply import compose_escalation_reply
+from .handoff_executor import create_handoff_for_escalation
 from .manifest_matching import conversation_text, matched_policy_actions, matched_services, needs_change_log
 from .observations import append_step, plain_text, tool_observation
 from .risk_guardrails import has_unmodeled_high_risk_text, state_high_risk_text
@@ -183,7 +184,7 @@ def build_escalation(state: SessionState, runtime: GenericRuntime, action: Escal
     payload.setdefault("reason", action.reason)
     payload.setdefault("conversation_summary", state.messages[-8:])
     payload.setdefault("tools_checked", [f"{obs.tool}.{obs.operation}" for obs in state.observations if obs.tool])
-    handoff_result = runtime.handoff.create(payload)
+    handoff_result = create_handoff_for_escalation(runtime, payload)
     obs = tool_observation(next_id(), handoff_result, observation_type="handoff")
     state.observations.append(obs)
     append_step(
@@ -191,8 +192,8 @@ def build_escalation(state: SessionState, runtime: GenericRuntime, action: Escal
         action_type="escalate",
         thought_summary=action.thought_summary,
         status="ok",
-        tool="handoff_tool",
-        operation="create",
+        tool="handoff_executor",
+        operation="create_handoff",
         observation_id=obs.id,
     )
     reply = compose_escalation_reply(action.team, payload, state)

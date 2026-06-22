@@ -64,14 +64,17 @@
 IT Support Agent = General Agent Runtime + IT Domain Manifest
 ```
 
-通用 runtime tools：
+Planner-visible runtime tools：
 
 - `file_tool`：对 allowlist 目录执行 list、read、grep 等只读文件操作。
 - `http_tool`：调用 allowlist 内的内部 API。
 - `sql_tool`：对 allowlist 数据库和表执行只读、参数化 SQL 查询。
 - `search_tool`：对注册过的 index 执行语义搜索或 hybrid search。
 - `memory_tool`：保存会话状态、已查询信息、诊断过程和中间结论。
-- `handoff_tool`：生成升级摘要或 handoff payload。
+
+Runtime terminal executors：
+
+- `handoff_executor`：只在 planner 输出 `EscalateAction`，且 runtime validation 与 compliance checker 均通过之后执行，用于生成人工上报 handoff payload。它不是 planner-visible tool，LLM 不能通过 `tool_call` 直接调用。
 
 IT domain manifest 提供：
 
@@ -120,7 +123,7 @@ Guardrail 设计：
 
 当前实现反思：
 
-- 工具层已经接近 v2.0：`GenericRuntime`、manifest、allowlist、通用 file/http/sql/search/policy/handoff tools 都存在。
+- 工具层已经接近 v2.0：`GenericRuntime`、manifest、allowlist、通用 file/http/sql/search/policy tools，以及 escalation terminal handoff executor 都存在。
 - 但 agent orchestration 仍然是人工写死的 workflow：先分类，再固定查 DB/KB/history，再进入 `_handle_vpn`、`_handle_okta`、`_handle_access`、`_handle_pipeline` 等业务分支。
 - 因此当前实现更准确地说是“agentic workflow + generic tools”，还不是自主规划型 agent。
 
@@ -143,7 +146,8 @@ v3.0 要保留的 v2.0 能力：
 
 - `GenericRuntime`
 - `domain_manifest.yaml`
-- 通用工具：`file_tool`、`http_tool`、`sql_tool`、`search_tool`、`policy_tool`、`handoff_tool`
+- Planner-visible 通用工具：`file_tool`、`http_tool`、`sql_tool`、`search_tool`、`policy_tool`
+- Runtime terminal executors：`handoff_executor`、compliance checker
 - 文件 allowlist、API allowlist、SQL read-only、index allowlist 等 runtime guardrails
 - evidence summary
 - tool trace
@@ -443,7 +447,7 @@ Runtime 校验：
 - 如果 escalation 是由 policy 触发，必须引用 policy observation。
 - 如果 escalation 是由证据触发，例如 multi-system outage、tool failure、unknown user，则必须引用相关 evidence observation。
 - Handoff payload 必须包含 employee context、conversation summary、tools checked、known facts、missing fields。
-- Runtime 调用 `handoff_tool.create` 生成最终 handoff observation。
+- Runtime 在 `EscalateAction` 通过 `validate_escalation` 和 compliance checker 后调用 terminal `handoff_executor`，底层创建最终 handoff observation。Planner 不能直接 tool_call handoff。
 
 如果 escalate 缺少必要上下文：
 
