@@ -632,3 +632,221 @@ v3.0 API 返回结构应扩展为：
 当前推荐方向：
 
 v3.0 应作为下一阶段目标架构。它比 v2.0 更接近真正的 autonomous agent：LLM 负责 planning 和 decision proposal，GenericRuntime 负责执行和约束，Policy/Validation 作为 hard guardrail，前端只展示可审计的诊断摘要与证据，不泄露 hidden chain-of-thought。
+
+## 方案 v3.1：单 Planner 下的轮次对齐与 Case 状态生命周期
+
+### 背景问题
+
+当前 v3.0 路径已经只有 live LLM structured JSON planner，没有 deterministic fallback，也没有业务 workflow 分支。但在多轮对话里出现了新的上下文污染问题：
+
+- 用户先说“你好”，agent 正确介绍能力；随后用户提出 pipeline 故障，planner 仍可能被历史中的寒暄/能力介绍带偏，输出能力介绍而不是处理当前故障。
+- 用户在 Okta 问题解决后说“谢谢你”，planner 可能复用上一轮 Okta observations/evidence，继续输出 Okta 已解锁的结论，显得不自然。
+- 前端 evidence 展示可能来自整个 session 的 visible observations，而不一定是当前回复实际引用的证据。
+
+这些问题不是工具层或 policy 层的问题，而是 session transcript、case working context、current turn intent 没有清晰分层。
+
+### 设计原则
+
+v3.1 不新增 Turn Gate，不新增前置 classifier，不使用关键词匹配来识别“你好”“谢谢”等话术。
+
+原因：
+
+- Turn Gate 会让系统更像两段式 workflow，削弱“单一自主 planner”的可信度。
+- 关键词匹配无法穷尽自然语言表达，也不符合 agentic 设计目标。
+- “寒暄、致谢、普通知识问答、能力询问”可以被视为 planner 的合法 final_answer 场景，只是它们不需要工具和 evidence。
+
+v3.1 保持整体思路：
+
+```text
+user message
+→ 单一 LLM planner-executor loop
+→ planner 自主决定 tool_call / ask_user / final_answer / escalate
+→ runtime guardrails 校验
+→ compliance checker 校验
+→ response
+```
+
+新增的是状态生命周期约束，而不是业务流程分支。
+
+### 核心改动
+
+#### 1. 新增 latest_user_message
+
+Planner payload 中显式增加：
+
+```json
+{
+  "latest_user_message": "...",
+  "conversation": [...],
+  "observations": [...],
+  "working_state": {...}
+}
+```
+
+语义要求：
+
+- `latest_user_message` 是当前轮必须优先回应的用户输入。
+- `conversation` 只作为背景上下文，不能覆盖当前轮目标。
+- 如果 latest user message 是具体 IT 支持请求，planner 不能输出泛泛能力介绍或旧 case 结论。
+- 如果 latest user message 只是社交确认、感谢、能力询问或普通知识问题，planner 可以直接 final_answer，不调用工具。
+
+这不是业务分类，也不是 workflow router；它只是让 planner 的输入结构更清楚。
+
+#### 2. 新增 outcome="acknowledged"
+
+当前 outcome 只有：
+
+- `resolved`
+- `needs_info`
+- `escalated`
+
+v3.1 新增：
+
+- `acknowledged`
+
+语义：
+
+- 当前轮不是 active helpdesk case，或者不需要诊断工具。
+- 典型场景包括：致谢、确认、结束语、agent 能力说明、简单通用知识解释。
+- 不表示问题已解决，也不表示需要用户补充信息。
+- 不应产生新的 evidence、tool trace、policy evidence 或 case working state。
+
+示例：
+
+```json
+{
+  "action_type": "final_answer",
+  "outcome": "acknowledged",
+  "proposed_action": "none",
+  "answer": "不客气。后续如果还有 IT 问题，直接告诉我系统、现象和影响范围即可。",
+  "evidence_ids": [],
+  "policy_evidence_ids": [],
+  "confidence": 0.95,
+  "decision_rationale": "当前用户只是结束或确认，不需要工具证据。",
+  "thought_summary": "无需启动排障。"
+}
+```
+
+#### 3. Case-scoped state 生命周期
+
+`SessionState.messages` 继续作为完整 conversation transcript，永远不因为 case 结束而清空。
+
+以下内容视为 case-scoped working context：
+
+- `observations`
+- `steps`
+- `working_state`
+- 从 observations 派生的 tool trace
+- 从 observations 派生的 evidence summary
+- runtime warnings / runtime rejections
+- compliance observations
+
+生命周期规则：
+
+```text
+outcome="resolved"     → response 构造完成后清空 case-scoped state
+outcome="escalated"    → response 构造完成后清空 case-scoped state
+outcome="needs_info"   → 保留 case-scoped state，等待用户补充
+outcome="acknowledged" → 不新增 case-scoped state，也不清理已有未完成 case
+```
+
+注意顺序：
+
+```text
+planner loop 完成
+→ 根据本轮新增 steps/observations 构造 ChatResponse
+→ 如果 outcome 是 resolved/escalated，再清空 case-scoped state
+→ 返回前端
+```
+
+不能先清再构造 response，否则前端看不到本轮诊断轨迹。
+
+#### 4. acknowledged 不影响 active case
+
+如果当前有一个 `needs_info` 未完成 case，用户中间说一句无关确认或感谢：
+
+- conversation 正常追加。
+- response 可以是 `acknowledged`。
+- 不清空 observations / working_state。
+- 不调用工具。
+- 不改变未完成 case 的上下文。
+
+如果上一个 case 已经 `resolved` 或 `escalated`，case-scoped state 已经被清理；下一条真实 IT 问题会从干净的 working context 开始。
+
+#### 5. 当前轮回答对齐校验
+
+不新增单独 alignment checker，先在 runtime final validation 中做轻量结构约束：
+
+- 如果 action.outcome 是 `acknowledged`，允许没有 evidence_ids 和 policy_evidence_ids。
+- 如果 action.outcome 是 `acknowledged`，不能引用 observation id，也不能返回旧 case 的 evidence。
+- 如果 latest_user_message 是具体 IT case，而 draft answer 明显只是能力介绍或结束语，runtime 应形成 visible runtime_rejection，让 planner 重新生成。
+
+这里仍避免关键词硬编码。优先通过 prompt 约束和 schema 约束解决；如需要更强语义检查，再考虑加入 LLM-based current-turn alignment checker。
+
+#### 6. 前端展示规则
+
+前端需要支持 `acknowledged`：
+
+- 不显示“已解决”或“需补充信息”。
+- 可以显示为“已回应”或不显示诊断状态。
+- 不展示引用来源，除非当前回复实际引用了本轮 evidence。
+- 右侧诊断面板在 acknowledged 轮次可显示“本轮无需工具调用”。
+
+同时，后端 response 的 evidence 应优先来自当前 final/escalate action 引用的 evidence ids，不能默认把整个 session 的历史 visible evidence 都返回给当前回复。
+
+### v3.1 相比 Turn Gate 方案的取舍
+
+不采用 Turn Gate：
+
+- 保持单 planner 主路径。
+- 不增加一次 LLM 调用。
+- 不引入前置意图分类器。
+- 更符合自主 agent 的展示目标。
+
+代价：
+
+- 需要更严格地管理 state lifecycle。
+- 需要 prompt 明确 current turn priority。
+- 如果 planner 对 acknowledged 场景仍频繁调用工具，需要通过 eval 暴露并优化 prompt，而不是立刻写死拦截。
+
+### v3.1 迁移计划
+
+第一阶段：Schema 与 payload
+
+- 在 action schema 中加入 `outcome="acknowledged"`。
+- 在 `planner_payload` 中加入 `latest_user_message`。
+- 更新 planner prompt，强调 latest user message 优先。
+- 更新 response schema / frontend outcome label。
+
+第二阶段：Case state lifecycle
+
+- 为 `SessionState` 增加清理 case-scoped state 的方法，例如 `clear_case_context()`。
+- 在 `HelpdeskAgent.chat()` 中先构造 response，再按 final outcome 清理 state。
+- `resolved` / `escalated` 后清理 observations、steps、working_state。
+- `needs_info` 保留。
+- `acknowledged` 不新增 case state，不清理未完成 case。
+
+第三阶段：Evidence scoping
+
+- 后端 response 只返回当前 final/escalate action 实际引用的 evidence ids，或至少只返回本轮新增 observations 派生的 evidence。
+- 前端 assistant message 的“引用来源”只展示当前回复相关 evidence。
+
+第四阶段：Runtime validation
+
+- `acknowledged` final_answer 允许无 evidence/policy。
+- `acknowledged` final_answer 禁止引用旧 observations。
+- 具体 IT case 不应被泛泛能力介绍响应；先用 prompt 和可见 runtime rejection 处理，必要时后续引入 LLM alignment checker。
+
+第五阶段：测试与 eval
+
+- 新增 unit/runtime tests 覆盖 outcome schema、case state 清理、acknowledged 不更新 case state、resolved/escalated 后不污染下一轮。
+- 新增 live LLM eval 覆盖多轮：
+  - “你好” → pipeline 故障
+  - Okta resolved → “谢谢你”
+  - `needs_info` → 用户补充信息
+  - resolved case → 新 VPN case
+  - 简单通用知识问题，例如“什么是 HTTP 协议”
+
+当前推荐方向：
+
+v3.1 应作为 v3.0 的小步架构修复：不引入 Turn Gate，不回退到 workflow 分类，不使用关键词匹配；通过 `latest_user_message`、`acknowledged outcome`、case-scoped state lifecycle 和 evidence scoping，让单一 autonomous planner 在多轮对话中更稳定、更自然、更可审计。
