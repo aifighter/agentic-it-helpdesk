@@ -1,0 +1,47 @@
+[
+  {
+    "incident_id": "INC-2407",
+    "title": "Chicago Salesforce slowness during carrier packet loss",
+    "systems": ["Salesforce", "Chicago Office Network"],
+    "symptoms": ["salesforce slow", "chicago", "multiple users", "yesterday"],
+    "resolution": "Correlated to Chicago office circuit packet loss. Users routed through VPN alternate path until carrier fixed link.",
+    "outcome": "resolved",
+    "closed_at": "2026-04-19"
+  },
+  {
+    "incident_id": "INC-2411",
+    "title": "VPN reconnect loop after US-East gateway patch",
+    "systems": ["VPN"],
+    "symptoms": ["vpn disconnect", "10 minutes", "remote", "client 6.2", "US-East"],
+    "resolution": "Updated VPN client to 6.4 and switched to us-west gateway during US-East degradation.",
+    "outcome": "resolved",
+    "closed_at": "2026-04-20"
+  },
+  {
+    "incident_id": "INC-2419",
+    "title": "Data pipeline timeouts after firewall maintenance",
+    "systems": ["Jenkins", "Snowflake", "Tableau"],
+    "symptoms": ["jenkins timeout", "tableau stale", "maintenance", "snowflake", "pipeline"],
+    "resolution": "Network team refreshed service-account allowlists after Friday maintenance.",
+    "outcome": "escalated",
+    "closed_at": "2026-04-18"
+  },
+  {
+    "incident_id": "INC-2386",
+    "title": "Okta lockout after repeated password reset attempts",
+    "systems": ["Okta"],
+    "symptoms": ["okta", "locked", "password reset", "mfa enrolled"],
+    "resolution": "Helpdesk verified identity and unlocked Okta account. User signed in with existing MFA.",
+    "outcome": "resolved",
+    "closed_at": "2026-04-12"
+  },
+  {
+    "incident_id": "INC-2424",
+    "title": "MFA reset required after lost phone",
+    "systems": ["Okta"],
+    "symptoms": ["lost phone", "mfa reset", "cannot login"],
+    "resolution": "Escalated to IAM for identity verification and MFA reset.",
+    "outcome": "escalated",
+    "closed_at": "2026-04-16"
+  }
+]

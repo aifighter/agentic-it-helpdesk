@@ -1,0 +1,51 @@
+[
+  {
+    "service": "Okta",
+    "status": "healthy",
+    "regions": ["global"],
+    "summary": "No active login or MFA incidents.",
+    "last_updated": "2026-04-21T08:40:00Z"
+  },
+  {
+    "service": "VPN",
+    "status": "degraded",
+    "regions": ["US-East"],
+    "summary": "US-East VPN gateway is dropping some sessions after 10-20 minutes. Alternate gateway us-west-vpn.company.test is healthy.",
+    "last_updated": "2026-04-21T08:30:00Z"
+  },
+  {
+    "service": "Salesforce",
+    "status": "healthy",
+    "regions": ["global"],
+    "summary": "Vendor status and internal API latency are normal.",
+    "last_updated": "2026-04-21T08:35:00Z"
+  },
+  {
+    "service": "Chicago Office Network",
+    "status": "degraded",
+    "regions": ["Chicago"],
+    "summary": "Packet loss on the Chicago office internet circuit is affecting SaaS apps. Network Engineering opened carrier case CARR-1042.",
+    "last_updated": "2026-04-21T08:20:00Z"
+  },
+  {
+    "service": "Jenkins",
+    "status": "healthy",
+    "regions": ["global"],
+    "summary": "Controllers are online. No platform-wide build queue issue.",
+    "last_updated": "2026-04-21T08:42:00Z"
+  },
+  {
+    "service": "Snowflake",
+    "status": "healthy",
+    "regions": ["global"],
+    "summary": "Warehouse health is normal.",
+    "last_updated": "2026-04-21T08:41:00Z"
+  },
+  {
+    "service": "Tableau",
+    "status": "healthy",
+    "regions": ["global"],
+    "summary": "Extract refresh service is healthy.",
+    "last_updated": "2026-04-21T08:41:00Z"
+  }
+]

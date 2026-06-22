@@ -1,0 +1,23 @@
+[project]
+name = "agentic-it-helpdesk"
+version = "0.1.0"
+description = "Agentic IT Helpdesk Agent using a generic runtime plus IT domain manifest"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.8.0",
+  "requests>=2.32.0",
+  "pyyaml>=6.0.2",
+  "python-dotenv>=1.0.1",
+]
+
+[project.scripts]
+helpdesk-api = "backend.app.main:run"
+helpdesk-seed = "scripts.seed_data:main"
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

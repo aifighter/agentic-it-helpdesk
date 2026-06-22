@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import os
+import json
+from typing import Any
+
+import requests
+
+from .config import env
+
+
+class DeepSeekClient:
+    def __init__(self) -> None:
+        self.api_key = env("LLM_API_KEY") or env("DEEPSEEK_API_KEY")
+        self.model = env("LLM_MODEL") or env("DEEPSEEK_MODEL", "deepseek-v4-pro")
+        self.base_url = (env("LLM_BASE_URL") or env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).rstrip("/")
+        self.max_tokens = int(env("LLM_MAX_TOKENS") or env("DEEPSEEK_MAX_TOKENS", "4096"))
+        self.thinking = env("LLM_THINKING") or env("DEEPSEEK_THINKING", "disabled")
+        self.connect_timeout_seconds = float(env("LLM_CONNECT_TIMEOUT_SECONDS") or env("DEEPSEEK_CONNECT_TIMEOUT_SECONDS", "10"))
+        self.read_timeout_seconds = float(env("LLM_READ_TIMEOUT_SECONDS") or env("DEEPSEEK_READ_TIMEOUT_SECONDS", "120"))
+        self.enabled = os.getenv("HELPDESK_USE_LLM", "1") != "0" and bool(self.api_key)
+
+    def plan_action(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.complete_json(system_prompt, payload)
+
+    def complete_json(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.enabled:
+            raise RuntimeError("LLM JSON client is disabled or LLM_API_KEY is missing.")
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            "temperature": 0.1,
+            "max_tokens": self.max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        if self.thinking == "disabled":
+            self._disable_thinking(body)
+        elif self.thinking in {"minimal", "low"}:
+            self._minimize_thinking(body)
+        elif self.thinking == "enabled":
+            self._enable_thinking(body)
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            json=body,
+            timeout=(self.connect_timeout_seconds, self.read_timeout_seconds),
+        )
+        response.raise_for_status()
+        body = response.json()
+        choice = body["choices"][0]
+        content = choice["message"].get("content") or ""
+        if not content.strip():
+            raise ValueError(
+                "LLM provider returned empty JSON content. "
+                f"finish_reason={choice.get('finish_reason')!r}, usage={body.get('usage')!r}"
+            )
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "LLM provider returned invalid JSON content. "
+                f"finish_reason={choice.get('finish_reason')!r}, content_prefix={content[:1000]!r}"
+            ) from exc
+
+    def _provider_family(self) -> str:
+        value = f"{self.base_url} {self.model}".lower()
+        if "deepseek" in value:
+            return "deepseek"
+        if "dashscope" in value or "bailian" in value or "aliyun" in value or "qwen" in value:
+            return "qwen"
+        return "openai_compatible"
+
+    def _disable_thinking(self, body: dict[str, Any]) -> None:
+        provider = self._provider_family()
+        if provider == "deepseek":
+            body["thinking"] = {"type": "disabled"}
+            return
+        if provider == "qwen":
+            body["enable_thinking"] = False
+            return
+        body["thinking"] = {"type": "disabled"}
+        body["enable_thinking"] = False
+
+    def _minimize_thinking(self, body: dict[str, Any]) -> None:
+        provider = self._provider_family()
+        if provider == "deepseek":
+            body["thinking"] = {"type": "enabled"}
+            body["reasoning_effort"] = "low"
+            return
+        if provider == "qwen":
+            body["enable_thinking"] = True
+            body["thinking_budget"] = 1
+            return
+        body["reasoning_effort"] = "low"
+
+    def _enable_thinking(self, body: dict[str, Any]) -> None:
+        provider = self._provider_family()
+        if provider == "deepseek":
+            body["thinking"] = {"type": "enabled"}
+            return
+        if provider == "qwen":
+            body["enable_thinking"] = True

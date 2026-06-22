@@ -1,0 +1,23 @@
+[
+  {
+    "id": "CHG-1874",
+    "date": "2026-04-17",
+    "systems": ["Jenkins", "Snowflake", "Tableau"],
+    "summary": "Friday maintenance rotated outbound firewall rules for data platform service accounts.",
+    "risk": "Pipelines using legacy service account routes may time out until allowlists are refreshed."
+  },
+  {
+    "id": "CHG-1882",
+    "date": "2026-04-20",
+    "systems": ["VPN"],
+    "summary": "US-East VPN gateway patch deployed.",
+    "risk": "Clients older than 6.4 may reconnect repeatedly."
+  },
+  {
+    "id": "CHG-1885",
+    "date": "2026-04-21",
+    "systems": ["Salesforce", "Chicago Office Network"],
+    "summary": "Network Engineering observed packet loss on the Chicago office internet circuit.",
+    "risk": "SaaS applications may appear slow for Chicago office users."
+  }
+]

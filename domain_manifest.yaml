@@ -1,0 +1,179 @@
+name: it_helpdesk_v2
+version: "2.0"
+description: >
+  Employee-facing IT support domain loaded by a generic agent runtime. Tools are generic;
+  this manifest registers data sources, permissions, and domain instructions.
+
+agent_role:
+  user: Employee with an IT problem.
+  interaction_model: Web chat backed by FastAPI.
+  success: Resolve common IT issues in minutes, or escalate with a complete handoff.
+
+runtime_tools:
+  file_tool:
+    description: List, read, and grep allowlisted documentation directories.
+    allowed_roots:
+      - data/knowledge_base
+      - data/policy
+  http_tool:
+    description: Call allowlisted internal APIs.
+    allowed_hosts:
+      - http://127.0.0.1:8000
+      - http://localhost:8000
+    allowed_methods: ["GET"]
+  sql_tool:
+    description: Run read-only parameterized SQL against allowlisted tables.
+    database: data/generated/employees.db
+    allowed_tables:
+      - employees
+      - devices
+      - employee_access
+  search_tool:
+    description: Search registered indexes using keyword/hybrid scoring.
+    indexes:
+      resolution_history:
+        path: data/history/resolution_history.json
+        description: Past incidents and resolved support cases.
+  policy_tool:
+    description: Evaluate structured rules before direct actions or escalation.
+    rule_file: data/policy/rules.yaml
+  handoff_tool:
+    description: Create structured escalation summaries from conversation state and evidence.
+
+data_sources:
+  knowledge_base:
+    type: filesystem_markdown
+    root: data/knowledge_base
+    usage: Use for troubleshooting steps, known patterns, and direct resolution instructions.
+  system_status:
+    type: http_api
+    base_url_env: STATUS_API_BASE_URL
+    endpoints:
+      - method: GET
+        path: /api/status/services
+        description: List service health records, optionally filtered by service or region.
+      - method: GET
+        path: /api/status/changes
+        description: List recent infrastructure or application changes.
+  user_directory:
+    type: sqlite
+    path: data/generated/employees.db
+    usage: Precise user, device, location, and access lookup.
+  resolution_history:
+    type: searchable_archive
+    index: resolution_history
+    usage: Similar incidents are supporting evidence, not source of truth. For repeated, multi-user, office-wide, login, VPN, Salesforce, pipeline, access, or multi-system issues, search this archive before final answer or handoff when practical.
+  policy_rules:
+    type: yaml
+    path: data/policy/rules.yaml
+    usage: Hard guardrail for direct resolution vs escalation.
+
+diagnosis_strategy:
+  - Identify employee identity from selected profile or email.
+  - Let the planner decide which generic source to inspect next from the conversation and observations.
+  - Use knowledge_base as the primary source for troubleshooting steps, runbook guidance, and user-facing remediation instructions.
+  - Use generic tools to gather evidence from relevant sources when possible; when a knowledge_base topic matches the user problem, prefer reading that runbook before giving troubleshooting steps.
+  - Use resolution_history as reference evidence for repeated, multi-user, office-wide, login, VPN, Salesforce, pipeline, access, or multi-system issues; it helps compare similar incidents and enrich handoff, but cannot alone prove a resolution.
+  - Ask a clarifying question when identity, affected system, symptom, or urgency is missing.
+  - Evaluate policy before promising or performing a direct action.
+  - Resolve only when evidence and policy support direct resolution.
+  - Escalate when production access, MFA reset, firewall, credential rotation, non-compliant device, or multi-system production impact is involved.
+
+knowledge_base_topics:
+  - path: data/knowledge_base/vpn/disconnects.md
+    title: VPN disconnects and remote access failures
+    use_when: VPN drops, remote employees cannot access internal tools, gateway/client version guidance.
+    keywords: ["vpn", "disconnect", "remote", "gateway", "client version", "断开", "远程", "内部工具"]
+  - path: data/knowledge_base/okta/login_and_mfa.md
+    title: Okta login, account lock, and MFA troubleshooting
+    use_when: Okta login failures, locked accounts, password reset confusion, MFA prompts or reset requests.
+    keywords: ["okta", "login", "password", "locked", "mfa", "登录", "密码", "锁定"]
+  - path: data/knowledge_base/salesforce/slow_loading.md
+    title: Salesforce slow loading from office networks
+    use_when: Salesforce loads slowly, especially for groups of users or one office/location.
+    keywords: ["salesforce", "slow", "loading", "chicago", "office", "加载", "很慢", "办公室"]
+  - path: data/knowledge_base/access/production_access.md
+    title: Production access request intake
+    use_when: Requests for Snowflake production, Grafana dashboards, or other sensitive production access.
+    keywords: ["snowflake", "grafana", "production", "database", "dashboard", "访问权限", "生产"]
+  - path: data/knowledge_base/pipeline/failure_after_maintenance.md
+    title: Pipeline failures after maintenance windows
+    use_when: Jenkins jobs timeout, Tableau reports stale, pipelines fail after maintenance or network changes.
+    keywords: ["pipeline", "jenkins", "timeout", "tableau", "maintenance", "stale", "维护", "超时"]
+
+visible_reasoning_policy:
+  show:
+    - tool_call_trace
+    - evidence_summary
+    - diagnostic_summary
+    - decision_rationale
+  hide:
+    - private chain-of-thought
+    - raw credentials
+    - inaccessible internal data
+
+risk_guardrails:
+  high_risk_terms:
+    - "\\bgrant\\b.*\\baccess\\b"
+    - "\\bgrant\\b.*\\bpermission\\b"
+    - "\\bmfa\\b.*\\breset\\b"
+    - "\\bfirewall\\b"
+    - "\\bcredential\\b"
+    - "\\bservice account\\b"
+    - "\\bproduction database\\b"
+    - "\\bsnowflake production\\b"
+    - "\\bgrafana\\b.*\\bdashboard"
+    - "授予.*权限"
+    - "开通.*权限"
+    - "生产.*数据库"
+    - "生产库"
+    - "防火墙"
+    - "凭证"
+    - "服务账号"
+    - "重置.*mfa"
+
+planner_hints:
+  services:
+    - name: Okta
+      keywords: ["okta", "login", "password", "mfa", "locked", "登录", "密码", "锁定"]
+    - name: VPN
+      keywords: ["vpn", "disconnect", "remote", "gateway", "内部工具", "远程", "断开", "网关"]
+    - name: Salesforce
+      keywords: ["salesforce", "slow", "loading", "加载", "很慢"]
+    - name: Chicago Office Network
+      keywords: ["chicago", "office", "teammates", "办公室", "同事"]
+    - name: Jenkins
+      keywords: ["jenkins", "job", "timeout", "超时"]
+    - name: Snowflake
+      keywords: ["snowflake", "database", "warehouse", "数据库"]
+    - name: Tableau
+      keywords: ["tableau", "report", "stale", "报表"]
+  policy_actions:
+    - action: okta_unlock
+      keywords: ["okta", "locked", "账号被锁", "锁定"]
+      outcome_bias: "resolved_if_allowed"
+    - action: okta_mfa_reset
+      keywords: ["mfa reset", "lost phone", "lost device", "phone lost", "丢失", "丢了", "手机丢", "重置 mfa", "mfa 需要 reset"]
+      outcome_bias: "escalate"
+    - action: vpn_troubleshooting
+      keywords: ["vpn", "disconnect", "remote", "断开", "远程"]
+      outcome_bias: "resolved_if_allowed"
+    - action: salesforce_network_workaround
+      keywords: ["salesforce", "chicago", "slow", "很慢", "同事"]
+      outcome_bias: "resolved_if_allowed"
+    - action: grant_snowflake_production
+      keywords: ["snowflake production", "production database", "snowflake", "生产库"]
+      outcome_bias: "escalate"
+      requires_context: true
+    - action: grant_grafana_dashboards
+      keywords: ["grafana", "dashboard", "dashboards"]
+      outcome_bias: "escalate"
+      requires_context: true
+    - action: modify_firewall_rules
+      keywords: ["firewall", "pipeline", "jenkins", "tableau", "maintenance", "维护", "pipeline"]
+      outcome_bias: "escalate"
+    - action: rotate_service_account_credentials
+      keywords: ["service account", "credential", "credentials", "凭证"]
+      outcome_bias: "escalate"
+  change_log_keywords: ["maintenance", "change", "pipeline", "timeout", "stale", "维护", "变更", "超时", "报表"]
+  access_context_keywords: ["because", "for ", "用于", "为了", "业务", "项目", "on-call", "analytics", "ceo", "要求", "阻塞", "风险", "紧急", "立即"]

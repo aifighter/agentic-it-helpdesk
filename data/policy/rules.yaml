@@ -1,0 +1,63 @@
+actions:
+  okta_unlock:
+    allowed: true
+    conditions:
+      - user_found
+      - mfa_enrolled
+      - account_locked
+      - no_compromise_signal
+    escalation_team: Identity Access Management
+    rationale: Low-risk account unlock is allowed when MFA is enrolled and no compromise signal exists.
+  okta_mfa_reset:
+    allowed: false
+    escalation_team: Identity Access Management
+    required_fields:
+      - employee
+      - identity_verification_status
+      - urgency
+    rationale: MFA reset can expose account access and requires human verification.
+  vpn_troubleshooting:
+    allowed: true
+    conditions:
+      - user_found
+      - device_compliant
+    escalation_team: Network Engineering
+    rationale: Agent may provide client update and alternate gateway steps for compliant devices.
+  device_compliance_override:
+    allowed: false
+    escalation_team: Endpoint Security
+    rationale: Non-compliant devices require endpoint review before network access changes.
+  salesforce_network_workaround:
+    allowed: true
+    conditions:
+      - user_found
+    escalation_team: Network Engineering
+    rationale: Agent may explain known status and temporary workarounds.
+  grant_snowflake_production:
+    allowed: false
+    escalation_team: Data Platform Access
+    required_approvals:
+      - manager
+      - data_owner
+      - security
+    rationale: Production database access requires approval and audit trail.
+  grant_grafana_dashboards:
+    allowed: false
+    escalation_team: Observability Platform
+    required_approvals:
+      - manager
+      - service_owner
+    rationale: Internal dashboard access may expose operational data.
+  modify_firewall_rules:
+    allowed: false
+    escalation_team: Network Engineering
+    rationale: Firewall changes require specialist review and change management.
+  rotate_service_account_credentials:
+    allowed: false
+    escalation_team: Data Platform
+    rationale: Credential rotation for production services requires ownership validation.
+
+default:
+  allowed: false
+  escalation_team: IT Helpdesk
+  rationale: Unknown or high-risk actions should be escalated with context.
