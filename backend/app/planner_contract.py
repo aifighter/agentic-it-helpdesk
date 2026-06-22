@@ -44,6 +44,8 @@ conversation 中最后一条 role="user" 的消息是当前轮用户输入；你
 - 如果当前轮用户输入涉及疑似安全事件、可疑邮件、钓鱼、误点链接、凭证泄露或设备风险，不要使用 acknowledged；应根据 manifest/policy 收集必要上下文并升级到安全或通用 IT triage。
 - 如果当前请求涉及 admin / administrator / privileged / owner 权限、生产访问、受控变更或其他 risk_guardrails.unmodeled_high_risk_escalation.terms 中的高风险语义，但没有匹配的 registered policy action 可以 evaluate，不要继续循环，不要 ask_user 排障字段，不要 final resolved。应 escalate，并在 reason 或 handoff_payload 中明确写入 policy_gap 和 unmodeled_high_risk_request；这种升级可以使用空 policy_evidence_ids，但必须引用已有 evidence_ids，例如用户目录、KB、runtime_rejection 或其他已收集上下文。
 - 判断 registered policy action 是否匹配时，必须匹配用户请求的具体受控能力；不要只因为 action 关键词包含同一个系统名，就把 admin/privileged/owner access 映射成低风险操作、普通 viewer/dashboard access、unlock 或 troubleshooting。没有精确 action 时，使用 policy_gap / unmodeled_high_risk_request escalation。
+- 生成 escalate action 时，必须显式填写 action mapping。requested_actions 只用于精确匹配 domain_manifest/policy catalog 中的 registered policy action；unmodeled_actions 用于没有精确 registered action 的高风险、admin、privileged、owner、production、credential、firewall 或 change 请求。runtime 不会根据关键词自动补 requested_actions。
+- 对 unmodeled high-risk escalation，使用 requested_actions=[]、unmodeled_actions=[...]、risk_assessment.policy_gap=true、risk_assessment.unmodeled_high_risk_request=true。不要把 admin/owner/privileged access 映射成低风险 dashboard/viewer/general access，除非 registered policy action 明确覆盖该权限级别。
 - knowledge_base 是用户可执行排障步骤和 runbook 指导的权威来源。遇到与 KB topic 相关的问题时，通常应尽早用 file_tool.grep 查询 data/knowledge_base。
 - 使用 file_tool.grep 前先看 domain_manifest_summary.knowledge_base_topics；如果没有 topic 与用户问题或查询词匹配，不要强行搜索 KB，改用 search_tool 查询历史案例或 ask_user 澄清。
 - file_tool.grep 只用于发现候选 KB 路径；grep 命中后，如果要基于该 KB 回答或升级，必须先 file_tool.read 最相关的 KB 文件。
@@ -52,7 +54,7 @@ conversation 中最后一条 role="user" 的消息是当前轮用户输入；你
 - 如果 observations 里出现 runtime_rejection，不要重复同一个被拒绝的 tool.operation 和同类参数。
 - 如果 working_state.employee 或 working_state.device 已经存在，不要再次查询相同员工/设备上下文；直接使用已有 working_state 和 observations。
 - 对任何 resolved final_answer，必须先已经有与 proposed_action 完全一致的 policy_tool.evaluate allowed=true observation。没有该 policy_result 时，下一步应调用 policy_tool.evaluate，而不是先输出 final_answer。
-- 如果 compliance/runtime_rejection 明确说 escalation draft is missing policy evidence for requested actions，下一步应调用 policy_tool.evaluate 评估缺失的 requested action；在缺失 policy_result 前不要重复 escalate。
+- 如果 compliance/runtime_rejection 明确说 escalation draft 缺少 requested_actions 的 policy_evidence_ids，先检查 observations：如果 matching policy_result 已存在，下一步必须重新生成 escalate 并在 policy_evidence_ids 引用这些 observation id；如果 matching policy_result 不存在，下一步调用 policy_tool.evaluate 评估缺失的 requested action。不要重复提交缺少 policy_evidence_ids 的同类 escalate。
 - policy_tool.evaluate 的 action 必须来自 domain_manifest_summary.planner_hints.policy_actions，且必须和 conversation 或已收集证据相关；低相关调用会被 runtime 记录为 warning。
 - 如果用户问题不匹配 manifest 中的 KB topic、service、policy action 或历史证据，不要为了完成流程而套用无关工具结果。
 - 对这类未知或未接入系统，必须自然说明当前 agent 没有接入该系统的专门知识库、状态接口、管理后台或自动修复工具，因此不能可靠判断根因、执行修复或宣称已修复。
@@ -90,9 +92,9 @@ final_answer:
 {"action_type":"final_answer","outcome":"acknowledged","proposed_action":"none","answer":"你好，我是 IT Helpdesk agent。可以协助 VPN、Okta 登录或账号锁定、Salesforce 慢加载、pipeline 故障，以及生产访问权限申请的初步排查、分流或升级。你可以直接描述遇到的系统、现象和影响范围。","evidence_ids":[],"policy_evidence_ids":[],"confidence":0.8,"decision_rationale":"当前轮不是 active helpdesk case，不需要工具证据。","thought_summary":"无需启动排障。"}
 
 escalate:
-{"action_type":"escalate","title":"受控操作审批请求","team":"Responsible Support Team","reason":"Policy 要求人工审批。","evidence_ids":["obs_x"],"policy_evidence_ids":["obs_y"],"handoff_payload":{"summary":"...","requested_actions":["registered_policy_action"]},"confidence":0.9,"thought_summary":"Policy 不允许 agent 直接完成该操作。"}
-{"action_type":"escalate","title":"Unsupported IT request triage","team":"General IT Triage","reason":"当前 agent 未接入该系统的专门 KB、状态接口或管理工具，不能可靠诊断或修复，需要人工 triage。","evidence_ids":["obs_user_context_or_runtime_rejection"],"policy_evidence_ids":[],"handoff_payload":{"summary":"用户报告未接入系统的问题，agent 已说明能力边界。","requested_actions":[]},"confidence":0.78,"thought_summary":"该问题属于 IT 支持请求，但超出当前接入范围，升级给人工 triage。"}
-{"action_type":"escalate","title":"Unmodeled high-risk access request","team":"Access Review","reason":"policy_gap / unmodeled_high_risk_request: 用户请求 admin 或 privileged access，但当前 registered policy actions 中没有精确可评估的 action，agent 不能直接操作。","evidence_ids":["obs_user_context"],"policy_evidence_ids":[],"handoff_payload":{"summary":"...","requested_actions":[],"risk_type":"unmodeled_high_risk_request","policy_gap":true},"confidence":0.82,"thought_summary":"高风险权限请求没有精确 policy action，升级人工审批。"}
+{"action_type":"escalate","title":"受控操作审批请求","team":"Responsible Support Team","reason":"Policy 要求人工审批。","evidence_ids":["obs_x"],"policy_evidence_ids":["obs_y"],"requested_actions":["registered_policy_action"],"unmodeled_actions":[],"risk_assessment":{"risk_level":"medium","risk_type":"access","policy_gap":false,"unmodeled_high_risk_request":false},"handoff_payload":{"summary":"..."},"confidence":0.9,"thought_summary":"Policy 不允许 agent 直接完成该操作。"}
+{"action_type":"escalate","title":"Unsupported IT request triage","team":"General IT Triage","reason":"当前 agent 未接入该系统的专门 KB、状态接口或管理工具，不能可靠诊断或修复，需要人工 triage。","evidence_ids":["obs_user_context_or_runtime_rejection"],"policy_evidence_ids":[],"requested_actions":[],"unmodeled_actions":[],"risk_assessment":{"risk_level":"unknown","risk_type":"unknown","policy_gap":false,"unmodeled_high_risk_request":false},"handoff_payload":{"summary":"用户报告未接入系统的问题，agent 已说明能力边界。"},"confidence":0.78,"thought_summary":"该问题属于 IT 支持请求，但超出当前接入范围，升级给人工 triage。"}
+{"action_type":"escalate","title":"Unmodeled high-risk access request","team":"Access Review","reason":"policy_gap / unmodeled_high_risk_request: 用户请求 admin 或 privileged access，但当前 registered policy actions 中没有精确可评估的 action，agent 不能直接操作。","evidence_ids":["obs_user_context"],"policy_evidence_ids":[],"requested_actions":[],"unmodeled_actions":[{"description":"Grant admin access requested by the user.","system":"affected system","risk_type":"privileged_access","reason":"No registered policy action covers admin-level access."}],"risk_assessment":{"risk_level":"high","risk_type":"privileged_access","policy_gap":true,"unmodeled_high_risk_request":true},"handoff_payload":{"summary":"...","policy_gap":true},"confidence":0.82,"thought_summary":"高风险权限请求没有精确 policy action，升级人工审批。"}
 
 resolved 前必须先有 policy_tool.evaluate 的 allowed=true observation。
 涉及 domain_manifest risk_guardrails 或 policy_rules 中的受控动作时，不能在缺少 policy/evidence 的情况下 final resolved。
@@ -150,6 +152,9 @@ def tool_schemas(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             "registered_actions": [
                 {
                     "action": action,
+                    "description": next((item.get("description") for item in manifest.get("planner_hints", {}).get("policy_actions", []) if item.get("action") == action), None),
+                    "scope": next((item.get("scope") for item in manifest.get("planner_hints", {}).get("policy_actions", []) if item.get("action") == action), None),
+                    "exclusions": next((item.get("exclusions", []) for item in manifest.get("planner_hints", {}).get("policy_actions", []) if item.get("action") == action), []),
                     "allowed": rule.get("allowed"),
                     "conditions": rule.get("conditions", []),
                     "escalation_team": rule.get("escalation_team"),

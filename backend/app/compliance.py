@@ -62,7 +62,9 @@ def deterministic_compliance_check(
     has_denied_policy = any(obs.type == "policy_result" and obs.data.get("allowed") is False for obs in observations)
     high_risk = any(re.search(pattern, draft_text, flags=re.I) for pattern in high_risk_terms)
     policy_actions = {obs.data.get("action") for obs in observations if obs.type == "policy_result"}
-    requested_actions = set((draft.get("handoff_payload") or {}).get("requested_actions") or [])
+    handoff_payload = draft.get("handoff_payload") or {}
+    requested_actions = set((draft.get("requested_actions") or []) + (handoff_payload.get("requested_actions") or []))
+    unmodeled_actions = (draft.get("unmodeled_actions") or []) + (handoff_payload.get("unmodeled_actions") or [])
     policy_by_id = {obs.id: obs for obs in observations if obs.type == "policy_result"}
     cited_policy = [policy_by_id[obs_id] for obs_id in draft.get("policy_evidence_ids", []) if obs_id in policy_by_id]
 
@@ -83,7 +85,7 @@ def deterministic_compliance_check(
             "confidence": 0.97,
         }
 
-    if draft_action_type == "escalate" and has_policy_gap_marker(draft) and high_risk:
+    if draft_action_type == "escalate" and has_policy_gap_marker(draft) and (high_risk or unmodeled_actions):
         return {
             "compliant": True,
             "risk_level": "medium",

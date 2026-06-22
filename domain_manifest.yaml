@@ -173,32 +173,59 @@ planner_hints:
       keywords: ["tableau", "report", "stale", "报表"]
   policy_actions:
     - action: okta_unlock
+      description: "Unlock an existing employee Okta account after identity and risk checks pass."
+      scope: "account unlock only"
+      exclusions: ["Okta admin access", "MFA reset", "privileged identity administration"]
       keywords: ["okta", "locked", "账号被锁", "锁定"]
       outcome_bias: "resolved_if_allowed"
     - action: okta_mfa_reset
+      description: "Request human-verified MFA reset for an employee."
+      scope: "MFA reset approval workflow"
+      exclusions: ["Okta admin access", "privileged identity administration"]
       keywords: ["mfa reset", "lost phone", "lost device", "phone lost", "丢失", "丢了", "手机丢", "重置 mfa", "mfa 需要 reset"]
       outcome_bias: "escalate"
     - action: vpn_troubleshooting
+      description: "Provide documented VPN troubleshooting steps for compliant employee devices."
+      scope: "client/gateway troubleshooting guidance"
+      exclusions: ["network admin access", "firewall changes", "privileged infrastructure changes"]
       keywords: ["vpn", "disconnect", "remote", "断开", "远程"]
       outcome_bias: "resolved_if_allowed"
     - action: salesforce_network_workaround
+      description: "Explain known Salesforce network workaround or routing status for affected users."
+      scope: "temporary workaround communication"
+      exclusions: ["Salesforce admin access", "permission changes", "data export"]
       keywords: ["salesforce", "chicago", "slow", "很慢", "同事"]
       outcome_bias: "resolved_if_allowed"
     - action: grant_snowflake_production
+      description: "Request access to Snowflake production database resources."
+      scope: "production database access request requiring approval"
+      exclusions: ["Snowflake account admin", "ownership transfer", "privileged platform administration"]
       keywords: ["snowflake production", "production database", "snowflake", "生产库"]
       outcome_bias: "escalate"
       requires_context: true
     - action: grant_grafana_dashboards
+      description: "Request access to existing internal Grafana dashboards."
+      scope: "dashboard viewer/editor access"
+      exclusions: ["Grafana admin access", "organization owner access", "privileged platform administration"]
       keywords: ["grafana", "dashboard", "dashboards"]
       outcome_bias: "escalate"
       requires_context: true
     - action: modify_firewall_rules
+      description: "Request firewall or network rule changes through change management."
+      scope: "firewall/network rule change request"
+      exclusions: ["Jenkins admin access", "Tableau admin access", "generic pipeline troubleshooting"]
       keywords: ["firewall", "pipeline", "jenkins", "tableau", "maintenance", "维护", "pipeline"]
       outcome_bias: "escalate"
     - action: rotate_service_account_credentials
+      description: "Request service account credential rotation with ownership validation."
+      scope: "credential rotation request"
+      exclusions: ["human account password reset", "privileged account grant"]
       keywords: ["service account", "credential", "credentials", "凭证"]
       outcome_bias: "escalate"
     - action: security_incident_triage
+      description: "Escalate suspected phishing, suspicious links, or endpoint security incidents."
+      scope: "security incident triage"
+      exclusions: ["routine helpdesk troubleshooting", "access grant"]
       keywords: ["phishing", "suspicious email", "clicked link", "security incident", "钓鱼", "可疑邮件", "可疑", "邮件", "点了链接", "链接", "安全事件"]
       outcome_bias: "escalate"
   change_log_keywords: ["maintenance", "change", "pipeline", "timeout", "stale", "维护", "变更", "超时", "报表"]

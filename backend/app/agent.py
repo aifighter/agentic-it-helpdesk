@@ -17,9 +17,9 @@ from .finalization import (
     build_final_answer,
     enrich_escalation_action,
     validate_ask_user,
-    validate_escalation,
     validate_final_answer,
 )
+from .escalation_validation import validate_escalation
 from .llm import DeepSeekClient
 from .observations import (
     append_step,
@@ -172,7 +172,21 @@ class HelpdeskAgent:
                 handoff_payload={
                     "summary": state.messages[-1]["content"] if state.messages else "Unmodeled high-risk request",
                     "requested_actions": [],
+                    "unmodeled_actions": [
+                        {
+                            "description": state.messages[-1]["content"] if state.messages else "Unmodeled high-risk request",
+                            "system": None,
+                            "risk_type": "unknown",
+                            "reason": "No exact registered policy action can be safely evaluated for this high-risk request.",
+                        }
+                    ],
                     "risk_type": "unmodeled_high_risk_request",
+                    "risk_assessment": {
+                        "risk_level": "high",
+                        "risk_type": "unknown",
+                        "policy_gap": True,
+                        "unmodeled_high_risk_request": True,
+                    },
                     "policy_gap": True,
                 },
                 confidence=0.78,

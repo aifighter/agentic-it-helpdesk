@@ -6,6 +6,7 @@ import requests
 
 from backend.app.compliance import deterministic_compliance_check
 from backend.app.config import get_manifest
+from backend.app.risk_guardrails import has_policy_gap_marker
 from backend.app.schemas import Observation
 from tests.test_support import ERROR_API, start_error_server
 
@@ -45,6 +46,12 @@ def test_compliance_guardrail_from_manifest() -> None:
     assert high_risk_with_unrelated_allow and high_risk_with_unrelated_allow["required_next_action"] == "escalate"
 
 
+def test_policy_gap_marker_requires_true_value_or_marker_text() -> None:
+    assert not has_policy_gap_marker({"risk_assessment": {"policy_gap": False, "unmodeled_high_risk_request": False}})
+    assert has_policy_gap_marker({"risk_assessment": {"policy_gap": True}})
+    assert has_policy_gap_marker({"reason": "policy_gap / unmodeled_high_risk_request requires manual review"})
+
+
 def test_api_error_exposes_traceback() -> None:
     process = start_error_server()
     try:
@@ -68,5 +75,6 @@ def test_api_error_exposes_traceback() -> None:
 
 TESTS = [
     test_compliance_guardrail_from_manifest,
+    test_policy_gap_marker_requires_true_value_or_marker_text,
     test_api_error_exposes_traceback,
 ]

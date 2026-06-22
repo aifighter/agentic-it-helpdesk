@@ -33,8 +33,20 @@ def has_unmodeled_high_risk_text(manifest: dict[str, Any], text: str) -> bool:
 
 
 def has_policy_gap_marker(value: Any) -> bool:
-    text = json.dumps(value, ensure_ascii=False, default=str).lower()
-    return any(marker in text for marker in POLICY_GAP_MARKERS)
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if key_text in POLICY_GAP_MARKERS and item is True:
+                return True
+            if has_policy_gap_marker(item):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(has_policy_gap_marker(item) for item in value)
+    if isinstance(value, str):
+        text = value.lower()
+        return any(marker in text for marker in POLICY_GAP_MARKERS)
+    return False
 
 
 def state_high_risk_text(state: SessionState) -> str:

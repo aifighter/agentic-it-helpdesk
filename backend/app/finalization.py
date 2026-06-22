@@ -4,10 +4,11 @@ import re
 from typing import Any
 
 from .action_schemas import AskUserAction, EscalateAction, FinalAnswerAction
+from .evidence_guards import has_unread_kb_match
 from .escalation_reply import compose_escalation_reply
 from .manifest_matching import conversation_text, matched_policy_actions, matched_services, needs_change_log
 from .observations import append_step, plain_text, tool_observation
-from .risk_guardrails import has_policy_gap_marker, has_unmodeled_high_risk_text, is_unmodeled_high_risk_escalation, state_high_risk_text
+from .risk_guardrails import has_unmodeled_high_risk_text, state_high_risk_text
 from .schemas import Observation
 from .state import SessionState
 from .tools import GenericRuntime
@@ -52,24 +53,6 @@ def validate_final_answer(state: SessionState, action: FinalAnswerAction, manife
         return "final_answer rejected: proposed_action is not supported by cited allowed policy evidence."
     if cites_low_relevance_policy(state, policy_ids):
         return "final_answer rejected: cited policy evidence followed a low-relevance runtime warning and cannot support resolved output."
-    return None
-
-
-def validate_escalation(state: SessionState, action: EscalateAction, manifest: dict[str, Any]) -> str | None:
-    evidence_ids = set(action.evidence_ids)
-    policy_ids = set(action.policy_evidence_ids)
-    observations = {obs.id: obs for obs in state.observations}
-    if not evidence_ids:
-        return "escalate rejected: missing evidence_ids."
-    if not all(obs_id in observations for obs_id in evidence_ids | policy_ids):
-        return "escalate rejected: referenced observation id does not exist."
-    policy_gap_escalation = is_unmodeled_high_risk_escalation(manifest, state, action.model_dump())
-    if has_unread_kb_match(state) and not policy_gap_escalation:
-        return "escalate rejected: file_tool.grep found a KB match, but planner has not read the matched KB article. Use file_tool.read before escalation."
-    if not policy_ids and "policy" in action.reason.lower() and not policy_gap_escalation:
-        return "escalate rejected: policy-based escalation must cite policy_evidence_ids."
-    if not action.handoff_payload:
-        return "escalate rejected: missing handoff_payload."
     return None
 
 
@@ -189,6 +172,12 @@ def build_final_answer(state: SessionState, action: FinalAnswerAction) -> dict[s
 
 def build_escalation(state: SessionState, runtime: GenericRuntime, action: EscalateAction, next_id) -> dict[str, Any]:
     payload = dict(action.handoff_payload)
+    if action.requested_actions:
+        payload.setdefault("requested_actions", list(action.requested_actions))
+    if action.unmodeled_actions:
+        payload.setdefault("unmodeled_actions", [item.model_dump(mode="json") for item in action.unmodeled_actions])
+    if action.risk_assessment.model_dump(exclude_defaults=True):
+        payload.setdefault("risk_assessment", action.risk_assessment.model_dump(mode="json"))
     payload.setdefault("title", action.title)
     payload.setdefault("team", action.team)
     payload.setdefault("reason", action.reason)
@@ -219,31 +208,4 @@ def build_escalation(state: SessionState, runtime: GenericRuntime, action: Escal
 
 
 def enrich_escalation_action(state: SessionState, action: EscalateAction, manifest: dict[str, Any]) -> EscalateAction:
-    payload = dict(action.handoff_payload)
-    if has_policy_gap_marker({"reason": action.reason, "handoff_payload": payload}):
-        return action
-    requested_actions = list(dict.fromkeys(payload.get("requested_actions") or []))
-    for inferred in matched_policy_actions(conversation_text(state.messages), manifest.get("planner_hints", {})):
-        if inferred not in requested_actions:
-            requested_actions.append(inferred)
-    if requested_actions:
-        payload["requested_actions"] = requested_actions
-    return action.model_copy(update={"handoff_payload": payload})
-
-
-def has_unread_kb_match(state: SessionState) -> bool:
-    matched_paths = {
-        item.get("path")
-        for obs in state.observations
-        if obs.tool == "file_tool" and obs.operation == "grep" and isinstance(obs.data.get("output"), list)
-        for item in obs.data["output"]
-        if item.get("path")
-    }
-    if not matched_paths:
-        return False
-    read_paths = {
-        obs.data.get("tool_calls", [{}])[0].get("input", {}).get("path")
-        for obs in state.observations
-        if obs.tool == "file_tool" and obs.operation == "read"
-    }
-    return not bool(matched_paths & read_paths)
+    return action
