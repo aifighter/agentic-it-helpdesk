@@ -55,7 +55,7 @@ class HelpdeskAgent:
         )
         self.sessions: dict[str, SessionState] = {}
 
-    def chat(self, message: str, user_email: str | None = None, session_id: str | None = None, llm_api_key: str | None = None) -> ChatResponse:
+    def chat(self, message: str, user_email: str | None = None, session_id: str | None = None) -> ChatResponse:
         state = self._get_state(session_id)
         state.remember("user", message)
         if user_email:
@@ -70,7 +70,7 @@ class HelpdeskAgent:
         final_payload: dict[str, Any] | None = None
         for _ in range(MAX_STEPS):
             try:
-                action = parse_agent_action(self._plan_next_action(state, llm_api_key))
+                action = parse_agent_action(self._plan_next_action(state))
             except ValidationError as exc:
                 self._record_runtime_rejection(state, f"Planner action schema validation failed: {exc}", "Planner 输出的 action 结构不合法，要求 planner 重新生成。")
                 continue
@@ -85,18 +85,18 @@ class HelpdeskAgent:
                 final_payload = build_ask_user(state, action)
                 break
             if isinstance(action, FinalAnswerAction):
-                final_payload = self._try_final_answer(state, action, llm_api_key)
+                final_payload = self._try_final_answer(state, action)
                 if final_payload:
                     break
                 continue
             if isinstance(action, EscalateAction):
-                final_payload = self._try_escalation(state, action, llm_api_key)
+                final_payload = self._try_escalation(state, action)
                 if final_payload:
                     break
                 continue
 
         if final_payload is None:
-            final_payload = self._max_steps_payload(state, llm_api_key)
+            final_payload = self._max_steps_payload(state)
 
         state.remember("assistant", final_payload["reply"])
         response = self._response(state, start_index, observation_start_index, final_payload)
@@ -108,9 +108,9 @@ class HelpdeskAgent:
             state.working_state = working_state_before_turn
         return response
 
-    def _plan_next_action(self, state: SessionState, llm_api_key: str | None) -> dict[str, Any]:
+    def _plan_next_action(self, state: SessionState) -> dict[str, Any]:
         payload = planner_payload(state, self.manifest)
-        return self.llm.plan_action(planner_system_prompt(), payload, api_key=llm_api_key)
+        return self.llm.plan_action(planner_system_prompt(), payload)
 
     def _execute_tool_call(self, state: SessionState, action: ToolAction) -> None:
         try:
@@ -124,23 +124,23 @@ class HelpdeskAgent:
             obs = self._record_runtime_rejection(state, f"{action.tool}.{action.operation} rejected: {exc}", action.thought_summary)
             append_step(state, action_type="tool_call", thought_summary=action.thought_summary, status="rejected", tool=action.tool, operation=action.operation, observation_id=obs.id)
 
-    def _try_final_answer(self, state: SessionState, action: FinalAnswerAction, llm_api_key: str | None = None) -> dict[str, Any] | None:
+    def _try_final_answer(self, state: SessionState, action: FinalAnswerAction) -> dict[str, Any] | None:
         if rejection := validate_final_answer(state, action, self.manifest):
             self._record_action_rejection(state, "final_answer", action.thought_summary, rejection, "planner 必须补充 evidence/policy 或改为升级/追问。")
             return None
         if action.outcome == "acknowledged":
             return build_final_answer(state, action)
-        if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="final_answer", draft=action.model_dump(), next_id=self._next_observation_id, llm_api_key=llm_api_key):
+        if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="final_answer", draft=action.model_dump(), next_id=self._next_observation_id):
             self._record_action_rejection(state, "final_answer", action.thought_summary, rejection, "Mandatory compliance checker 拒绝 final_answer，planner 必须继续查询、追问或改为升级。")
             return None
         return build_final_answer(state, action)
 
-    def _try_escalation(self, state: SessionState, action: EscalateAction, llm_api_key: str | None = None) -> dict[str, Any] | None:
+    def _try_escalation(self, state: SessionState, action: EscalateAction) -> dict[str, Any] | None:
         action = enrich_escalation_action(state, action, self.manifest)
         if rejection := validate_escalation(state, action, self.manifest):
             self._record_action_rejection(state, "escalate", action.thought_summary, rejection, "planner 必须补充 handoff 所需证据。")
             return None
-        if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="escalate", draft=action.model_dump(), next_id=self._next_observation_id, llm_api_key=llm_api_key):
+        if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="escalate", draft=action.model_dump(), next_id=self._next_observation_id):
             self._record_action_rejection(state, "escalate", action.thought_summary, rejection, "Mandatory compliance checker 拒绝 escalate 草稿，planner 必须补充证据或重新生成 handoff。")
             return None
         return build_escalation(state, self.runtime, action, self._next_observation_id)
@@ -163,7 +163,7 @@ class HelpdeskAgent:
             obs = runtime_warning(self._next_observation_id(), warning, thought)
             state.observations.append(obs)
 
-    def _max_steps_payload(self, state: SessionState, llm_api_key: str | None = None) -> dict[str, Any]:
+    def _max_steps_payload(self, state: SessionState) -> dict[str, Any]:
         if has_unmodeled_high_risk_text(self.manifest, state_high_risk_text(state)):
             config = unmodeled_high_risk_config(self.manifest)
             obs = self._record_runtime_rejection(
@@ -201,7 +201,7 @@ class HelpdeskAgent:
                 confidence=0.78,
                 thought_summary="未建模高风险请求不能继续追问排障字段，升级给人工审批。",
             )
-            payload = self._try_escalation(state, action, llm_api_key)
+            payload = self._try_escalation(state, action)
             if payload:
                 return payload
         return build_ask_user(

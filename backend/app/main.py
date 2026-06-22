@@ -58,7 +58,6 @@ def llm_health() -> dict:
         "planner": "live_llm_structured_json",
         "configured": agent.llm.enabled,
         "server_key_configured": bool(agent.llm.default_api_key),
-        "accepts_client_api_key": agent.llm.llm_enabled,
         "model": agent.llm.model,
         "base_url": agent.llm.base_url,
         "timeout_seconds": {
@@ -88,7 +87,6 @@ def chat(request: ChatRequest) -> ChatResponse:
         message=request.message,
         user_email=request.user_email,
         session_id=request.session_id,
-        llm_api_key=request.llm_api_key,
     )
 
 

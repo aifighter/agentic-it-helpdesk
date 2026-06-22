@@ -107,7 +107,7 @@ def test_relevance_warning_is_soft() -> None:
     assert result.call.tool == "file_tool"
 
 
-def test_request_scoped_llm_api_key_is_used_without_server_key() -> None:
+def test_server_configured_llm_api_key_is_used() -> None:
     previous_env = {name: os.environ.get(name) for name in ["LLM_API_KEY", "DEEPSEEK_API_KEY", "HELPDESK_USE_LLM"]}
     previous_post = llm_module.requests.post
     captured: dict[str, str] = {}
@@ -124,14 +124,14 @@ def test_request_scoped_llm_api_key_is_used_without_server_key() -> None:
         return FakeResponse()
 
     try:
-        os.environ["LLM_API_KEY"] = ""
+        os.environ["LLM_API_KEY"] = "sk-from-server"
         os.environ["DEEPSEEK_API_KEY"] = ""
         os.environ["HELPDESK_USE_LLM"] = "1"
         llm_module.requests.post = fake_post
         client = DeepSeekClient()
-        assert client.enabled is False
-        assert client.complete_json("system", {"hello": "world"}, api_key="sk-from-ui") == {"ok": True}
-        assert captured["authorization"] == "Bearer sk-from-ui"
+        assert client.enabled is True
+        assert client.complete_json("system", {"hello": "world"}) == {"ok": True}
+        assert captured["authorization"] == "Bearer sk-from-server"
     finally:
         llm_module.requests.post = previous_post
         for name, value in previous_env.items():
@@ -148,5 +148,5 @@ TESTS = [
     test_file_allowlist,
     test_http_allowlist,
     test_relevance_warning_is_soft,
-    test_request_scoped_llm_api_key_is_used_without_server_key,
+    test_server_configured_llm_api_key_is_used,
 ]

@@ -6,7 +6,7 @@
 
 项目重点不是写一套固定 workflow，而是让 LLM planner 在通用工具和运行时约束下自主规划下一步。后端只有一条 planner 路径：**live LLM structured JSON planner**。没有 deterministic fallback，没有 `issue_type` 路由，没有 `_handle_vpn` / `_handle_okta` 这类业务分支。
 
-如果 LLM provider 失败、超时、返回非法 JSON、缺少 API key，`/api/chat` 会返回 HTTP 500，并把完整 traceback 暴露给前端。开发阶段不伪造成功，不吞异常。公网 demo 场景下，推荐在前端页面输入 DeepSeek API key；该 key 只随本次 `/api/chat` 请求发送给后端用于 LLM 调用，不写入 session、tool trace、handoff payload 或项目文件。
+如果 LLM provider 失败、超时、返回非法 JSON、缺少 API key，`/api/chat` 会返回 HTTP 500，并把完整 traceback 暴露给前端。开发阶段不伪造成功，不吞异常。
 
 ## 当前架构
 
@@ -163,9 +163,7 @@ pnpm install
 
 项目使用 OpenAI-compatible `/chat/completions` 风格接口。
 
-公网部署或面试 demo 时，推荐直接在前端页面的 `DeepSeek API key` 输入框填写 key。后端不需要预置真实 key；前端提交问题时会把 key 放在 `/api/chat` 请求体的 `llm_api_key` 字段中，仅用于本次 planner / compliance LLM 调用。
-
-本地或私有部署也可以使用通用 `LLM_*` 环境变量作为服务端默认 key：
+使用通用 `LLM_*` 环境变量在服务端配置 provider：
 
 ```bash
 LLM_API_KEY=your_key_here
@@ -194,7 +192,7 @@ DEEPSEEK_THINKING=disabled
 LLM_THINKING=disabled
 ```
 
-不要把真实 API key 提交到 git。公网部署时尤其不要把 key 写进前端构建产物或后端 `.env`；让评审者在页面输入自己的 key。
+不要把真实 API key 提交到 git。
 
 ## 启动
 
@@ -214,7 +212,6 @@ curl http://127.0.0.1:8000/api/llm/health
 `/api/llm/health` 会返回：
 
 - `server_key_configured`: 服务端是否配置了默认 key。
-- `accepts_client_api_key`: 后端是否接受前端随 `/api/chat` 提交的请求级 key。
 
 公网前后端分开部署时，将前端 origin 加到 `CORS_ALLOW_ORIGINS`，多个 origin 用英文逗号分隔。本地 `localhost:5173` 和 `127.0.0.1:5173` 默认允许。
 

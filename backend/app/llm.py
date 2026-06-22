@@ -21,11 +21,11 @@ class DeepSeekClient:
         self.llm_enabled = os.getenv("HELPDESK_USE_LLM", "1") != "0"
         self.enabled = self.llm_enabled and bool(self.default_api_key)
 
-    def plan_action(self, system_prompt: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
-        return self.complete_json(system_prompt, payload, api_key=api_key)
+    def plan_action(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.complete_json(system_prompt, payload)
 
-    def complete_json(self, system_prompt: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
-        request_api_key = self._request_api_key(api_key)
+    def complete_json(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
+        request_api_key = self._api_key()
         body = {
             "model": self.model,
             "messages": [
@@ -104,10 +104,10 @@ class DeepSeekClient:
         if provider == "qwen":
             body["enable_thinking"] = True
 
-    def _request_api_key(self, api_key: str | None) -> str:
+    def _api_key(self) -> str:
         if not self.llm_enabled:
             raise RuntimeError("LLM JSON client is disabled by HELPDESK_USE_LLM=0.")
-        request_api_key = (api_key or self.default_api_key or "").strip()
+        request_api_key = (self.default_api_key or "").strip()
         if not request_api_key:
-            raise RuntimeError("LLM API key is missing. Enter a DeepSeek API key in the frontend or configure LLM_API_KEY on the server.")
+            raise RuntimeError("LLM API key is missing. Configure LLM_API_KEY on the server.")
         return request_api_key

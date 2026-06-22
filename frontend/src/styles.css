@@ -568,37 +568,6 @@ textarea {
   background: #fbfaf7;
 }
 
-.api-key-field {
-  height: 32px;
-  min-width: 220px;
-  max-width: 320px;
-  flex: 1 1 240px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #dedbd2;
-  border-radius: 7px;
-  background: #ffffff;
-  padding: 0 9px;
-}
-
-.composer-bar .api-key-field span {
-  flex: 0 0 auto;
-  color: #706f6b;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.api-key-field input {
-  width: 100%;
-  min-width: 80px;
-  border: 0;
-  outline: 0;
-  color: #202124;
-  background: transparent;
-  font-size: 13px;
-}
-
 .composer-bar span {
   color: #706f6b;
   font-size: 13px;
@@ -1113,11 +1082,6 @@ pre {
     align-items: center;
     flex-wrap: wrap;
     flex-direction: row;
-  }
-
-  .api-key-field {
-    max-width: none;
-    flex-basis: 100%;
   }
 
   .composer-bar button {
