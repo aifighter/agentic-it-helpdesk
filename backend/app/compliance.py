@@ -74,6 +74,23 @@ def deterministic_compliance_check(
             "confidence": 0.98,
         }
 
+    if draft_action_type == "final_answer" and draft.get("outcome") == "acknowledged":
+        if high_risk:
+            return {
+                "compliant": False,
+                "risk_level": "high",
+                "reason": "Acknowledgement draft contains configured high-risk access/change semantics.",
+                "required_next_action": "reject",
+                "confidence": 0.94,
+            }
+        return {
+            "compliant": True,
+            "risk_level": "low",
+            "reason": "Acknowledgement draft does not claim operational action and does not require case evidence.",
+            "required_next_action": "allow",
+            "confidence": 0.97,
+        }
+
     if draft_action_type == "escalate" and requested_actions:
         missing_policy = sorted(action for action in requested_actions if action not in policy_actions)
         if missing_policy:

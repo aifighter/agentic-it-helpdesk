@@ -22,7 +22,7 @@ class AskUserAction(BaseModel):
 
 class FinalAnswerAction(BaseModel):
     action_type: Literal["final_answer"]
-    outcome: Literal["resolved", "needs_info"]
+    outcome: Literal["resolved", "needs_info", "acknowledged"]
     proposed_action: str
     answer: str
     evidence_ids: list[str]

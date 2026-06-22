@@ -123,6 +123,9 @@ risk_guardrails:
     - "\\bproduction database\\b"
     - "\\bsnowflake production\\b"
     - "\\bgrafana\\b.*\\bdashboard"
+    - "\\bphishing\\b"
+    - "\\bsuspicious email\\b"
+    - "\\bclicked\\b.*\\blink\\b"
     - "授予.*权限"
     - "开通.*权限"
     - "生产.*数据库"
@@ -131,6 +134,9 @@ risk_guardrails:
     - "凭证"
     - "服务账号"
     - "重置.*mfa"
+    - "钓鱼"
+    - "可疑.*邮件"
+    - "点了.*链接"
 
 planner_hints:
   services:
@@ -174,6 +180,9 @@ planner_hints:
       outcome_bias: "escalate"
     - action: rotate_service_account_credentials
       keywords: ["service account", "credential", "credentials", "凭证"]
+      outcome_bias: "escalate"
+    - action: security_incident_triage
+      keywords: ["phishing", "suspicious email", "clicked link", "security incident", "钓鱼", "可疑邮件", "可疑", "邮件", "点了链接", "链接", "安全事件"]
       outcome_bias: "escalate"
   change_log_keywords: ["maintenance", "change", "pipeline", "timeout", "stale", "维护", "变更", "超时", "报表"]
   access_context_keywords: ["because", "for ", "用于", "为了", "业务", "项目", "on-call", "analytics", "ceo", "要求", "阻塞", "风险", "紧急", "立即"]

@@ -313,6 +313,12 @@ p {
   color: #9d3427;
 }
 
+.outcome-pill.acknowledged {
+  background: #eef1f4;
+  border-color: #cbd2da;
+  color: #405061;
+}
+
 .thread-scroll {
   overflow: auto;
   padding: 24px;

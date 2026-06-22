@@ -56,6 +56,10 @@ actions:
     allowed: false
     escalation_team: Data Platform
     rationale: Credential rotation for production services requires ownership validation.
+  security_incident_triage:
+    allowed: false
+    escalation_team: Endpoint Security
+    rationale: Suspected phishing or clicked suspicious links require security triage.
 
 default:
   allowed: false

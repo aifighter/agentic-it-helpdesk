@@ -398,6 +398,7 @@ function OutcomePill({ outcome }) {
     resolved: "已解决",
     needs_info: "需补充信息",
     escalated: "已升级",
+    acknowledged: "已回应",
   };
   return <span className={`outcome-pill ${outcome}`}>{labels[outcome] || outcome}</span>;
 }

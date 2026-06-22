@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import re
 import uuid
+from copy import deepcopy
 from typing import Any
 
 from pydantic import ValidationError
 
 from .action_schemas import AskUserAction, EscalateAction, FinalAnswerAction, ToolAction, parse_agent_action
+from .compliance_gate import check_compliance
 from .compliance import ComplianceChecker
 from .config import get_manifest
 from .finalization import (
     build_ask_user,
     build_escalation,
     build_final_answer,
-    check_compliance,
     enrich_escalation_action,
     validate_ask_user,
     validate_escalation,
@@ -23,6 +24,7 @@ from .llm import DeepSeekClient
 from .observations import (
     append_step,
     evidence_from_observations,
+    observations_by_id,
     runtime_rejection,
     runtime_warning,
     tool_calls_from_observations,
@@ -36,7 +38,7 @@ from .schemas import ChatResponse
 from .state import SessionState
 from .tools import GenericRuntime
 
-MAX_STEPS = 14
+MAX_STEPS = 18
 
 
 class HelpdeskAgent:
@@ -60,6 +62,8 @@ class HelpdeskAgent:
             state.user_email = email
 
         start_index = len(state.steps)
+        observation_start_index = len(state.observations)
+        working_state_before_turn = deepcopy(state.working_state)
         final_payload: dict[str, Any] | None = None
         for _ in range(MAX_STEPS):
             try:
@@ -100,7 +104,14 @@ class HelpdeskAgent:
             )
 
         state.remember("assistant", final_payload["reply"])
-        return self._response(state, start_index, final_payload)
+        response = self._response(state, start_index, observation_start_index, final_payload)
+        if final_payload["outcome"] in {"resolved", "escalated"}:
+            state.clear_case_context()
+        elif final_payload["outcome"] == "acknowledged":
+            del state.steps[start_index:]
+            del state.observations[observation_start_index:]
+            state.working_state = working_state_before_turn
+        return response
 
     def _plan_next_action(self, state: SessionState) -> dict[str, Any]:
         payload = planner_payload(state, self.manifest)
@@ -122,6 +133,8 @@ class HelpdeskAgent:
         if rejection := validate_final_answer(state, action, self.manifest):
             self._record_runtime_rejection(state, rejection, "final_answer 被 runtime 拒绝，planner 必须补充 evidence/policy 或改为升级/追问。")
             return None
+        if action.outcome == "acknowledged":
+            return build_final_answer(state, action)
         if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="final_answer", draft=action.model_dump(), next_id=self._next_observation_id):
             self._record_runtime_rejection(state, rejection, "Mandatory compliance checker 拒绝 final_answer，planner 必须继续查询、追问或改为升级。")
             return None
@@ -148,9 +161,14 @@ class HelpdeskAgent:
             obs = runtime_warning(self._next_observation_id(), warning, thought)
             state.observations.append(obs)
 
-    def _response(self, state: SessionState, start_index: int, final_payload: dict[str, Any]) -> ChatResponse:
+    def _response(self, state: SessionState, start_index: int, observation_start_index: int, final_payload: dict[str, Any]) -> ChatResponse:
         step_slice = state.steps[start_index:]
-        observations = visible_observations(state.observations)
+        if final_payload["outcome"] == "acknowledged":
+            observations = visible_observations(state.observations[observation_start_index:])
+        else:
+            observations = visible_observations(state.observations)
+        evidence_ids = list(final_payload.get("evidence_ids", [])) + list(final_payload.get("policy_evidence_ids", []))
+        evidence_observations = observations_by_id(state.observations, evidence_ids) if evidence_ids else []
         return ChatResponse(
             session_id=state.session_id,
             reply=final_payload["reply"],
@@ -159,7 +177,7 @@ class HelpdeskAgent:
             agent_steps=step_slice,
             observations=observations,
             tool_calls=tool_calls_from_observations(observations),
-            evidence=evidence_from_observations(observations),
+            evidence=evidence_from_observations(evidence_observations),
             diagnostic_summary=[step.thought_summary for step in step_slice if step.thought_summary],
             decision_rationale=final_payload["decision_rationale"],
             escalation=final_payload.get("escalation"),

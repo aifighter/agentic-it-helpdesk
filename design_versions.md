@@ -670,27 +670,18 @@ user message
 
 ### 核心改动
 
-#### 1. 新增 latest_user_message
+#### 1. Current-turn priority prompt rule
 
-Planner payload 中显式增加：
+不新增 `latest_user_message` 字段。现有 `conversation` 已经包含完整轮次，最后一条 role="user" 的消息就是当前轮用户输入。
 
-```json
-{
-  "latest_user_message": "...",
-  "conversation": [...],
-  "observations": [...],
-  "working_state": {...}
-}
-```
+语义要求通过 planner prompt 明确：
 
-语义要求：
+- `conversation` 的最后一条 user message 是当前轮必须优先回应的输入。
+- 更早的 conversation 只作为背景上下文，不能覆盖当前轮目标。
+- 如果当前轮用户输入是具体 IT 支持请求，planner 不能输出泛泛能力介绍或旧 case 结论。
+- 如果当前轮用户输入不是 active helpdesk case，planner 可以直接 final_answer，不调用工具。
 
-- `latest_user_message` 是当前轮必须优先回应的用户输入。
-- `conversation` 只作为背景上下文，不能覆盖当前轮目标。
-- 如果 latest user message 是具体 IT 支持请求，planner 不能输出泛泛能力介绍或旧 case 结论。
-- 如果 latest user message 只是社交确认、感谢、能力询问或普通知识问题，planner 可以直接 final_answer，不调用工具。
-
-这不是业务分类，也不是 workflow router；它只是让 planner 的输入结构更清楚。
+这样避免重复建模，也避免把一个简单 current-turn 约定变成额外 router 字段。
 
 #### 2. 新增 outcome="acknowledged"
 
@@ -779,7 +770,7 @@ planner loop 完成
 
 - 如果 action.outcome 是 `acknowledged`，允许没有 evidence_ids 和 policy_evidence_ids。
 - 如果 action.outcome 是 `acknowledged`，不能引用 observation id，也不能返回旧 case 的 evidence。
-- 如果 latest_user_message 是具体 IT case，而 draft answer 明显只是能力介绍或结束语，runtime 应形成 visible runtime_rejection，让 planner 重新生成。
+- 如果当前轮用户输入是具体 IT case，而 draft answer 明显只是能力介绍或结束语，runtime 应形成 visible runtime_rejection，让 planner 重新生成。
 
 这里仍避免关键词硬编码。优先通过 prompt 约束和 schema 约束解决；如需要更强语义检查，再考虑加入 LLM-based current-turn alignment checker。
 
@@ -811,11 +802,10 @@ planner loop 完成
 
 ### v3.1 迁移计划
 
-第一阶段：Schema 与 payload
+第一阶段：Schema 与 prompt
 
 - 在 action schema 中加入 `outcome="acknowledged"`。
-- 在 `planner_payload` 中加入 `latest_user_message`。
-- 更新 planner prompt，强调 latest user message 优先。
+- 更新 planner prompt，强调 conversation 最后一条 user message 优先。
 - 更新 response schema / frontend outcome label。
 
 第二阶段：Case state lifecycle
@@ -849,4 +839,4 @@ planner loop 完成
 
 当前推荐方向：
 
-v3.1 应作为 v3.0 的小步架构修复：不引入 Turn Gate，不回退到 workflow 分类，不使用关键词匹配；通过 `latest_user_message`、`acknowledged outcome`、case-scoped state lifecycle 和 evidence scoping，让单一 autonomous planner 在多轮对话中更稳定、更自然、更可审计。
+v3.1 应作为 v3.0 的小步架构修复：不引入 Turn Gate，不回退到 workflow 分类，不使用关键词匹配；通过 current-turn priority prompt rule、`acknowledged outcome`、case-scoped state lifecycle 和 evidence scoping，让单一 autonomous planner 在多轮对话中更稳定、更自然、更可审计。

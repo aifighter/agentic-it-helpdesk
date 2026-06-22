@@ -117,6 +117,11 @@ def evidence_from_observations(observations: list[Observation]) -> list[Evidence
     return dedupe_evidence([item for obs in observations for item in obs.evidence])
 
 
+def observations_by_id(observations: list[Observation], ids: list[str]) -> list[Observation]:
+    wanted = set(ids)
+    return [obs for obs in observations if obs.id in wanted]
+
+
 def summarize_observations_for_text(observations: list[Observation]) -> str:
     return " ".join(obs.summary for obs in observations if obs.ok and obs.visible)
 

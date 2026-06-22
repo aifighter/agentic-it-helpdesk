@@ -17,3 +17,8 @@ class SessionState:
 
     def remember(self, role: str, content: str) -> None:
         self.messages.append({"role": role, "content": content})
+
+    def clear_case_context(self) -> None:
+        self.observations.clear()
+        self.steps.clear()
+        self.working_state.clear()

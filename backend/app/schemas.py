@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-Outcome = Literal["resolved", "needs_info", "escalated"]
+Outcome = Literal["resolved", "needs_info", "escalated", "acknowledged"]
 
 
 class ChatRequest(BaseModel):

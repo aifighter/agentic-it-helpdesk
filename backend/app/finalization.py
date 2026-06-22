@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .action_schemas import AskUserAction, EscalateAction, FinalAnswerAction
-from .compliance import ComplianceChecker, compliance_summary
+from .escalation_reply import compose_escalation_reply
 from .manifest_matching import conversation_text, matched_policy_actions, matched_services, needs_change_log
-from .observations import append_step, plain_text, tool_calls_from_observations, tool_observation
+from .observations import append_step, plain_text, tool_observation
 from .schemas import Observation
 from .state import SessionState
 from .tools import GenericRuntime
 
 
 def validate_final_answer(state: SessionState, action: FinalAnswerAction, manifest: dict[str, Any]) -> str | None:
+    if action.outcome == "acknowledged":
+        if action.evidence_ids or action.policy_evidence_ids:
+            return "final_answer rejected: acknowledged responses must not cite case evidence or policy evidence."
+        text = f"{action.proposed_action} {action.answer}"
+        if any(re.search(pattern, text, flags=re.I) for pattern in manifest.get("risk_guardrails", {}).get("high_risk_terms", [])):
+            return "final_answer rejected: acknowledged response contains configured high-risk access/change semantics."
+        return None
     if action.outcome == "needs_info":
         if user_message_is_agent_meta(state) and is_agent_meta_answer(action.answer, action.proposed_action):
             return None
@@ -204,6 +212,8 @@ def build_final_answer(state: SessionState, action: FinalAnswerAction) -> dict[s
         "outcome": action.outcome,
         "confidence": float(action.confidence),
         "decision_rationale": plain_text(action.decision_rationale),
+        "evidence_ids": list(action.evidence_ids),
+        "policy_evidence_ids": list(action.policy_evidence_ids),
     }
 
 
@@ -226,13 +236,15 @@ def build_escalation(state: SessionState, runtime: GenericRuntime, action: Escal
         operation="create",
         observation_id=obs.id,
     )
-    reply = compose_escalation_reply(action.team, payload, plain_text(action.reason), state)
+    reply = compose_escalation_reply(action.team, payload, state)
     return {
         "reply": reply,
         "outcome": "escalated",
         "confidence": float(action.confidence),
         "decision_rationale": plain_text(action.reason),
         "escalation": payload,
+        "evidence_ids": list(action.evidence_ids),
+        "policy_evidence_ids": list(action.policy_evidence_ids),
     }
 
 
@@ -245,43 +257,6 @@ def enrich_escalation_action(state: SessionState, action: EscalateAction, manife
     if requested_actions:
         payload["requested_actions"] = requested_actions
     return action.model_copy(update={"handoff_payload": payload})
-
-
-def check_compliance(
-    *,
-    state: SessionState,
-    checker: ComplianceChecker,
-    draft_action_type: str,
-    draft: dict[str, Any],
-    next_id,
-) -> str | None:
-    observations = [obs for obs in state.observations if obs.visible][-20:]
-    result = checker.check(
-        draft_action_type=draft_action_type,
-        draft=draft,
-        user_messages=state.messages,
-        observations=observations,
-        tool_calls=tool_calls_from_observations(observations),
-    )
-    obs = Observation(
-        id=next_id(),
-        type="planner_note",
-        ok=bool(result.get("compliant")),
-        summary=compliance_summary(result),
-        data={"compliance": result, "draft_action_type": draft_action_type},
-        visible=True,
-    )
-    state.observations.append(obs)
-    append_step(
-        state,
-        action_type="compliance_check",
-        thought_summary="Mandatory compliance checker 审核最终草稿。",
-        status="ok" if result.get("compliant") else "rejected",
-        observation_id=obs.id,
-    )
-    if result.get("compliant") and result.get("required_next_action") == "allow":
-        return None
-    return compliance_summary(result)
 
 
 def has_unread_kb_match(state: SessionState) -> bool:
@@ -300,21 +275,3 @@ def has_unread_kb_match(state: SessionState) -> bool:
         if obs.tool == "file_tool" and obs.operation == "read"
     }
     return not bool(matched_paths & read_paths)
-
-
-def compose_escalation_reply(team: str, payload: dict[str, Any], reason: str, state: SessionState) -> str:
-    employee = state.working_state.get("employee", {})
-    requested = payload.get("requested_actions") or []
-    requested_text = ", ".join(requested) if requested else payload.get("summary") or "用户报告的问题"
-    approvals = sorted({approval for item in state.observations if item.type == "policy_result" for approval in item.data.get("required_approvals", [])})
-    approval_text = f"需要审批：{', '.join(approvals)}。" if approvals else "当前 agent 未接入足够的专门数据源或处理工具，需要人工 triage。"
-    person = employee.get("name") or state.user_email or "该员工"
-    business_context = state.messages[-1]["content"] if state.messages else ""
-    return (
-        f"这个请求不能由 agent 直接完成，我已升级给 {team}。\n\n"
-        f"请求项：{requested_text.rstrip('。.!?')}。\n"
-        f"员工：{person}（{state.user_email or 'unknown'}）。\n"
-        f"原因：{approval_text}\n"
-        f"业务背景：{business_context}\n\n"
-        f"我已经把员工信息、{'policy 结果、' if approvals else ''}已查询的工具证据和对话上下文放入 handoff payload，下一位处理人可以直接接手。"
-    )
