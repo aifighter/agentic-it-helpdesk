@@ -14,6 +14,7 @@ def planner_payload(state: SessionState, manifest: dict[str, Any]) -> dict[str, 
         "user_email": state.user_email,
         "conversation": state.messages[-8:],
         "observations": [obs.model_dump(mode="json") for obs in state.observations[-16:]],
+        "terminal_action_evidence_inventory": terminal_action_evidence_inventory(state),
         "working_state": state.working_state,
         "domain_manifest_summary": {
             "data_sources": manifest.get("data_sources", {}),
@@ -46,6 +47,9 @@ Terminal action preflight:
 - 如果 escalate.requested_actions 非空，policy_evidence_ids 必须覆盖每一个 requested action 对应的 policy_result observation id。缺任何一个 action 的 policy_result 时，下一步必须调用 policy_tool.evaluate，不要先 escalate。
 - 如果用户一次请求多个 registered policy actions，必须逐个 evaluate，并在同一个 escalation 中同时引用全部 requested_actions 与全部 policy_evidence_ids。
 - domain_manifest、tool_schemas 或 policy action catalog 中的 allowed/required_approvals 只是规划提示，不是 policy_evidence。只有 policy_tool.evaluate 返回的 type="policy_result" observation 才能放进 policy_evidence_ids。
+- planner_payload.terminal_action_evidence_inventory 会列出当前可用的 policy_result_observations。生成 escalate 前，对照 requested_actions：任何 action 没有出现在该 inventory 里，都必须先调用 policy_tool.evaluate。
+- 更严格地说：不要把尚未出现在 terminal_action_evidence_inventory.policy_result_observations 的 registered action 放进 escalate.requested_actions。先输出 tool_call policy_tool.evaluate；等下一轮 inventory 出现该 action 后，再输出包含它的 escalate。
+- 如果你准备输出的 final_answer/escalate 草稿、reason 或 thought_summary 里会出现“缺少 / 尚未评估 / missing / not evaluated / still need”等含义，说明 terminal action 还没准备好；不要输出该 terminal action，先调用相应工具补证据。
 - 不要根据“看起来两个 action 都需要审批”直接升级；每个 requested action 都必须先有自己的 policy_tool.evaluate observation。
 - 如果前一轮 runtime_rejection 指出缺少 policy_evidence_ids、KB read 或 action mapping，下一步先补对应证据或重新生成合规 terminal action，不要重复提交同类缺陷草稿。
 
@@ -180,6 +184,35 @@ def tool_schemas(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             },
         },
     ]
+
+
+def terminal_action_evidence_inventory(state: SessionState) -> dict[str, Any]:
+    policy_results = [
+        {
+            "observation_id": obs.id,
+            "action": obs.data.get("action"),
+            "allowed": obs.data.get("allowed"),
+        }
+        for obs in state.observations
+        if obs.type == "policy_result"
+    ]
+    kb_reads = [
+        {
+            "observation_id": obs.id,
+            "path": obs.data.get("path"),
+            "title": obs.evidence[0].title if obs.evidence else None,
+        }
+        for obs in state.observations
+        if obs.tool == "file_tool" and obs.operation == "read"
+    ]
+    return {
+        "policy_result_observations": policy_results[-8:],
+        "kb_read_observations": kb_reads[-8:],
+        "note": (
+            "Only policy_result_observations can satisfy policy_evidence_ids. "
+            "KB reads can support evidence_ids but cannot replace policy_tool.evaluate for requested_actions."
+        ),
+    }
 
 
 def runtime_constraints(state: SessionState) -> dict[str, Any]:
