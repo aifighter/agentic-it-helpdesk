@@ -404,6 +404,7 @@ function OutcomePill({ outcome }) {
     needs_info: "需补充信息",
     escalated: "已升级",
     acknowledged: "已回应",
+    unsupported: "暂不支持",
   };
   return <span className={`outcome-pill ${outcome}`}>{labels[outcome] || outcome}</span>;
 }

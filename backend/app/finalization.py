@@ -14,6 +14,10 @@ def validate_final_answer(state: SessionState, action: FinalAnswerAction, manife
         if action.evidence_ids or action.policy_evidence_ids:
             return "final_answer rejected: acknowledged responses must not cite case evidence or policy evidence."
         return None
+    if action.outcome == "unsupported":
+        if action.evidence_ids or action.policy_evidence_ids:
+            return "final_answer rejected: unsupported responses must not cite case evidence or policy evidence."
+        return None
     if action.outcome == "needs_info":
         return None
     evidence_ids = set(action.evidence_ids)

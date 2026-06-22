@@ -79,6 +79,29 @@ def test_needs_info_final_has_no_keyword_boundary_guard() -> None:
     assert validate_final_answer(state, action, manifest) is None
 
 
+def test_unsupported_final_answer_contract() -> None:
+    manifest = get_manifest()
+    state = SessionState(session_id="test", user_email="alex.chen@company.test")
+    action = parse_agent_action(
+        {
+            "action_type": "final_answer",
+            "outcome": "unsupported",
+            "proposed_action": "unsupported_system_boundary",
+            "answer": "抱歉，我目前暂时无法支持这个系统，建议转给对应支持团队。",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+            "decision_rationale": "System is outside connected tools and data sources.",
+            "confidence": 0.7,
+            "thought_summary": "Unsupported system.",
+        }
+    )
+    assert validate_final_answer(state, action, manifest) is None
+
+    old_evidence = action.model_copy(update={"evidence_ids": ["obs_old"]})
+    rejection = validate_final_answer(state, old_evidence, manifest)
+    assert rejection and "unsupported responses must not cite" in rejection
+
+
 def test_acknowledged_answer_does_not_need_boundary_language() -> None:
     manifest = get_manifest()
     state = SessionState(session_id="test", user_email="alex.chen@company.test")
@@ -104,5 +127,6 @@ TESTS = [
     test_ask_user_rejected_when_compliance_requires_escalation,
     test_ask_user_has_no_keyword_content_guard,
     test_needs_info_final_has_no_keyword_boundary_guard,
+    test_unsupported_final_answer_contract,
     test_acknowledged_answer_does_not_need_boundary_language,
 ]

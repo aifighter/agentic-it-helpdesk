@@ -94,6 +94,28 @@ def test_acknowledged_response_hides_current_user_request_observation() -> None:
     assert response.evidence == []
 
 
+def test_unsupported_response_is_terminal_case_outcome() -> None:
+    agent = HelpdeskAgent()
+    state = SessionState(session_id="test", user_email="alex.chen@company.test")
+    state.observations.append(Observation(id="obs_case", type="tool_result", ok=True, summary="Old case evidence."))
+    state.working_state["employee"] = {"email": "alex.chen@company.test"}
+    response = agent._response(
+        state,
+        start_index=0,
+        observation_start_index=1,
+        final_payload={
+            "reply": "抱歉，我目前暂时无法支持这个系统。",
+            "outcome": "unsupported",
+            "confidence": 0.7,
+            "decision_rationale": "Unsupported system.",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+        },
+    )
+    assert response.outcome == "unsupported"
+    assert response.evidence == []
+
+
 def test_resolved_final_answer_requires_evidence_beyond_user_request() -> None:
     manifest = get_manifest()
     state = SessionState(session_id="test", user_email="alex.chen@company.test")
@@ -207,6 +229,7 @@ TESTS = [
     test_acknowledged_final_answer_contract,
     test_case_state_lifecycle_contract,
     test_acknowledged_response_hides_current_user_request_observation,
+    test_unsupported_response_is_terminal_case_outcome,
     test_resolved_final_answer_requires_evidence_beyond_user_request,
     test_max_steps_structured_escalation_signal_escalates,
     test_rejected_terminal_actions_remain_visible_in_timeline,

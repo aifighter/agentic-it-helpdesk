@@ -163,6 +163,7 @@ def compliance_system_prompt() -> str:
 规则：
 - 如果 draft 承诺执行 policy_rules 中受控/高风险语义对应的动作，但缺少 policy evidence 或 policy 要求人工审批，则 compliant=false。
 - 如果 draft 是 unmodeled high-risk / policy gap，final resolved 不合规；escalate 可以放行，但必须有 unmodeled_actions 或结构化 risk_assessment。
+- 如果 draft 是 final unsupported，只有在回复只是说明当前系统/能力未接入、暂时无法支持或建议人工渠道，且没有承诺诊断、修复、授权、重置或执行受控动作时，才 compliant=true。
 - 如果 draft 是 final resolved，必须有 allowed=true 的 policy_result 支撑。
 - 如果 draft 是 escalate，必须有清晰 handoff、证据或 policy 理由；不能承诺已经执行受控动作。
 - 如果 draft 缺少必要业务信息但风险不是必须升级，required_next_action="ask_user"。

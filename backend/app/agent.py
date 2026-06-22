@@ -92,7 +92,7 @@ class HelpdeskAgent:
 
         state.remember("assistant", final_payload["reply"])
         response = self._response(state, start_index, observation_start_index, final_payload)
-        if final_payload["outcome"] in {"resolved", "escalated"}:
+        if final_payload["outcome"] in {"resolved", "escalated", "unsupported"}:
             state.clear_case_context()
         elif final_payload["outcome"] == "acknowledged":
             del state.steps[start_index:]

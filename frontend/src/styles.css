@@ -319,6 +319,12 @@ p {
   color: #405061;
 }
 
+.outcome-pill.unsupported {
+  background: #f1ece4;
+  border-color: #d6c6ad;
+  color: #6b4e2e;
+}
+
 .thread-scroll {
   overflow: auto;
   padding: 24px;

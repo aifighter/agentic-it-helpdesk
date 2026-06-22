@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, Field, TypeAdapter
 
 
-Outcome = Literal["resolved", "needs_info", "escalated", "acknowledged"]
+Outcome = Literal["resolved", "needs_info", "escalated", "acknowledged", "unsupported"]
 
 
 class ToolAction(BaseModel):
@@ -25,7 +25,7 @@ class AskUserAction(BaseModel):
 
 class FinalAnswerAction(BaseModel):
     action_type: Literal["final_answer"]
-    outcome: Literal["resolved", "needs_info", "acknowledged"]
+    outcome: Literal["resolved", "needs_info", "acknowledged", "unsupported"]
     proposed_action: str
     answer: str
     evidence_ids: list[str]

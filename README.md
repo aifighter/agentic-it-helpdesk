@@ -146,12 +146,17 @@ Agent 可以直接解决：
 - KB/status/user directory 支持的可执行说明。
 - 普通问候或能力说明，返回 `acknowledged`，不启动诊断 case。
 
+Agent 会返回暂不支持：
+
+- 当前系统或能力没有接入 KB、状态接口、管理后台或自动修复工具。
+- 这不是“缺少用户补充信息”，而是能力边界之外的问题。
+- 前端显示 outcome=`unsupported` / “暂不支持”，回复由 LLM 生成，文案应简短、客气。
+
 Agent 必须升级：
 
 - policy 明确要求人工审批。
 - 生产访问、admin/privileged access、credential/firewall/change 等高风险请求。
 - 没有精确 registered policy action 的高风险请求。
-- 当前 agent 未接入系统、KB、状态接口或管理工具，不能可靠处理。
 - evidence 不足以支持 resolved，但问题仍需要 IT 支持。
 
 升级时，agent 会生成 handoff payload，包含：
@@ -302,6 +307,7 @@ uv run python tests/run_tests.py
 - file path allowlist。
 - HTTP host/method allowlist。
 - final/escalate evidence 和 policy evidence 校验。
+- unsupported 作为能力边界终止状态，不等同于 needs_info。
 - unmodeled high-risk escalation。
 - terminal action 被拒时，流程中保留 action block。
 
@@ -348,6 +354,10 @@ Salesforce 从昨天开始加载特别慢，Chicago 办公室的同事也遇到�
 
 ```text
 Grafana 的权限，老板叫我获取 admin 权限，你给我操作一下。
+```
+
+```text
+如何登陆上 LandingPYO 系统，我的账号密码貌似失效了。
 ```
 
 ```text
