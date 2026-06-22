@@ -22,8 +22,6 @@ def validate_final_answer(state: SessionState, action: FinalAnswerAction, manife
             return "final_answer rejected: acknowledged response contains configured high-risk access/change semantics."
         return None
     if action.outcome == "needs_info":
-        if user_message_is_agent_meta(state) and is_agent_meta_answer(action.answer, action.proposed_action):
-            return None
         if appears_out_of_domain(state, manifest):
             if not has_boundary_language(action.answer):
                 return (
@@ -122,41 +120,6 @@ def has_boundary_language(text: str) -> bool:
     boundary_terms = ["未接入", "没有接入", "没有专门", "无法可靠", "不能可靠", "暂时无法", "not connected", "not integrated"]
     source_terms = ["知识库", "runbook", "状态", "接口", "管理", "工具", "api"]
     return any(term in lower for term in boundary_terms) and any(term in lower for term in source_terms)
-
-
-def is_agent_meta_answer(answer: str, proposed_action: str) -> bool:
-    text = f"{proposed_action} {answer}".lower()
-    identity_terms = ["it helpdesk", "agent", "助手", "我是", "功能", "能力", "解决哪些问题", "能解决"]
-    scope_terms = ["vpn", "okta", "salesforce", "pipeline", "访问权限", "权限申请", "登录", "账号锁定"]
-    unsupported_terms = ["无法处理你的请求", "未接入", "没有接入", "没有专门", "不能可靠判断根因"]
-    return (
-        any(term in text for term in identity_terms)
-        and any(term in text for term in scope_terms)
-        and not any(term in text for term in unsupported_terms)
-    )
-
-
-def user_message_is_agent_meta(state: SessionState) -> bool:
-    text = conversation_text(state.messages[-1:]).strip().lower()
-    compact = "".join(text.split())
-    if compact in {"你好", "您好", "hi", "hello", "hey"}:
-        return True
-    meta_terms = [
-        "你是谁",
-        "你是啥",
-        "你的功能",
-        "你有什么功能",
-        "你能做什么",
-        "你可以做什么",
-        "你能解决哪些问题",
-        "你能解决什么问题",
-        "能解决哪些问题",
-        "功能是什么",
-        "who are you",
-        "what can you do",
-        "what do you do",
-    ]
-    return any(term in text for term in meta_terms)
 
 
 def asks_for_troubleshooting_details(text: str) -> bool:

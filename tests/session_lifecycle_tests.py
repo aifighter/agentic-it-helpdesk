@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+from backend.app.action_schemas import parse_agent_action
+from backend.app.agent import HelpdeskAgent
+from backend.app.config import get_manifest
+from backend.app.finalization import validate_final_answer
+from backend.app.schemas import AgentStep, Observation
+from backend.app.state import SessionState
+
+
+def test_acknowledged_final_answer_contract() -> None:
+    manifest = get_manifest()
+    state = SessionState(session_id="test", user_email="alex.chen@company.test")
+    state.remember("user", "I understand, thanks.")
+    action = parse_agent_action(
+        {
+            "action_type": "final_answer",
+            "outcome": "acknowledged",
+            "proposed_action": "none",
+            "answer": "不客气。后续如果还有 IT 问题，可以继续描述系统和现象。",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+            "decision_rationale": "The current turn does not require diagnostic tools.",
+            "confidence": 0.9,
+            "thought_summary": "No case work needed.",
+        }
+    )
+    assert validate_final_answer(state, action, manifest) is None
+
+    old_evidence = parse_agent_action(
+        {
+            "action_type": "final_answer",
+            "outcome": "acknowledged",
+            "proposed_action": "none",
+            "answer": "不客气。",
+            "evidence_ids": ["obs_old"],
+            "policy_evidence_ids": [],
+            "decision_rationale": "Incorrectly cites old evidence.",
+            "confidence": 0.9,
+            "thought_summary": "Invalid acknowledgement.",
+        }
+    )
+    rejection = validate_final_answer(state, old_evidence, manifest)
+    assert rejection and "must not cite" in rejection
+
+    risky_ack = parse_agent_action(
+        {
+            "action_type": "final_answer",
+            "outcome": "acknowledged",
+            "proposed_action": "none",
+            "answer": "I granted a configured high-risk access request.",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+            "decision_rationale": "Risky acknowledgement.",
+            "confidence": 0.9,
+            "thought_summary": "Invalid acknowledgement.",
+        }
+    )
+    rejection = validate_final_answer(state, risky_ack, {**manifest, "risk_guardrails": {"high_risk_terms": [r"high-risk access"]}})
+    assert rejection and "high-risk" in rejection
+
+
+def test_case_state_lifecycle_contract() -> None:
+    agent = HelpdeskAgent()
+    state = SessionState(session_id="test", user_email="alex.chen@company.test")
+    state.observations.append(Observation(id="obs_case", type="tool_result", ok=True, summary="Case evidence."))
+    state.working_state["employee"] = {"email": "alex.chen@company.test"}
+    state.steps.append(AgentStep(step=1, action_type="tool_call", thought_summary="Existing case step.", status="ok", tool="sql_tool", operation="query"))
+    response = agent._response(
+        state,
+        start_index=0,
+        observation_start_index=1,
+        final_payload={
+            "reply": "不客气。",
+            "outcome": "acknowledged",
+            "confidence": 0.9,
+            "decision_rationale": "No case work needed.",
+            "evidence_ids": [],
+            "policy_evidence_ids": [],
+        },
+    )
+    assert response.outcome == "acknowledged"
+    assert response.evidence == []
+    assert response.observations == []
+
+    state.clear_case_context()
+    assert state.observations == []
+    assert state.steps == []
+    assert state.working_state == {}
+
+
+def test_max_steps_unmodeled_high_risk_escalates() -> None:
+    agent = HelpdeskAgent()
+    state = SessionState(session_id="test", user_email="priya.narayan@company.test")
+    state.remember("user", "我要 Jenkins admin，CEO 要求的。")
+    payload = agent._max_steps_payload(state)
+    assert payload["outcome"] == "escalated"
+    assert "unmodeled_high_risk_request" in payload["escalation"].get("risk_type", "")
+    assert "错误信息" not in payload["reply"]
+
+
+TESTS = [
+    test_acknowledged_final_answer_contract,
+    test_case_state_lifecycle_contract,
+    test_max_steps_unmodeled_high_risk_escalates,
+]

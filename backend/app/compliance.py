@@ -66,15 +66,6 @@ def deterministic_compliance_check(
     policy_by_id = {obs.id: obs for obs in observations if obs.type == "policy_result"}
     cited_policy = [policy_by_id[obs_id] for obs_id in draft.get("policy_evidence_ids", []) if obs_id in policy_by_id]
 
-    if draft_action_type == "final_answer" and draft.get("outcome") == "needs_info" and is_meta_capability_exchange(draft, user_messages or []):
-        return {
-            "compliant": True,
-            "risk_level": "low",
-            "reason": "User asked a greeting or capability question; direct capability answer has no operational risk.",
-            "required_next_action": "allow",
-            "confidence": 0.98,
-        }
-
     if draft_action_type == "final_answer" and draft.get("outcome") == "acknowledged":
         if high_risk:
             return {
@@ -180,34 +171,6 @@ def deterministic_compliance_check(
             "confidence": 0.96,
         }
     return None
-
-
-def is_meta_capability_exchange(draft: dict[str, Any], user_messages: list[dict[str, str]]) -> bool:
-    user_text = " ".join(item.get("content", "") for item in user_messages[-2:] if item.get("role") == "user").strip().lower()
-    compact = "".join(user_text.split())
-    if compact in {"你好", "您好", "hi", "hello", "hey"}:
-        user_is_meta = True
-    else:
-        user_is_meta = any(
-            term in user_text
-            for term in [
-                "你是谁",
-                "你的功能",
-                "你有什么功能",
-                "你能做什么",
-                "你可以做什么",
-                "你能解决哪些问题",
-                "能解决哪些问题",
-                "功能是什么",
-                "who are you",
-                "what can you do",
-                "what do you do",
-            ]
-        )
-    draft_text = json.dumps(draft, ensure_ascii=False).lower()
-    describes_scope = all(term in draft_text for term in ["it helpdesk", "vpn"]) and any(term in draft_text for term in ["okta", "salesforce", "pipeline"])
-    unsafe_boundary = any(term in draft_text for term in ["未接入", "没有接入", "不能可靠判断根因", "无法处理你的请求"])
-    return user_is_meta and describes_scope and not unsafe_boundary
 
 
 def normalize_checker_result(result: dict[str, Any]) -> dict[str, Any]:
