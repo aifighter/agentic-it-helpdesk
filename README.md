@@ -237,6 +237,8 @@ cd ..
 
 项目使用 OpenAI-compatible `/chat/completions` 接口。推荐在项目根目录 `.env` 中配置：
 
+提交给 reviewer 的压缩包中已包含一份可用于 demo 的 `.env`；如需更换 provider、模型或 key，直接修改 `.env` 后重启后端即可。
+
 ```bash
 LLM_API_KEY=your_key_here
 LLM_MODEL=deepseek-v4-pro
