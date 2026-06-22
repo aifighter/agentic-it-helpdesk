@@ -11,21 +11,21 @@ from .config import env
 
 class DeepSeekClient:
     def __init__(self) -> None:
-        self.api_key = env("LLM_API_KEY") or env("DEEPSEEK_API_KEY")
+        self.default_api_key = env("LLM_API_KEY") or env("DEEPSEEK_API_KEY")
         self.model = env("LLM_MODEL") or env("DEEPSEEK_MODEL", "deepseek-v4-pro")
         self.base_url = (env("LLM_BASE_URL") or env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).rstrip("/")
         self.max_tokens = int(env("LLM_MAX_TOKENS") or env("DEEPSEEK_MAX_TOKENS", "4096"))
         self.thinking = env("LLM_THINKING") or env("DEEPSEEK_THINKING", "disabled")
         self.connect_timeout_seconds = float(env("LLM_CONNECT_TIMEOUT_SECONDS") or env("DEEPSEEK_CONNECT_TIMEOUT_SECONDS", "10"))
         self.read_timeout_seconds = float(env("LLM_READ_TIMEOUT_SECONDS") or env("DEEPSEEK_READ_TIMEOUT_SECONDS", "120"))
-        self.enabled = os.getenv("HELPDESK_USE_LLM", "1") != "0" and bool(self.api_key)
+        self.llm_enabled = os.getenv("HELPDESK_USE_LLM", "1") != "0"
+        self.enabled = self.llm_enabled and bool(self.default_api_key)
 
-    def plan_action(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.complete_json(system_prompt, payload)
+    def plan_action(self, system_prompt: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
+        return self.complete_json(system_prompt, payload, api_key=api_key)
 
-    def complete_json(self, system_prompt: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.enabled:
-            raise RuntimeError("LLM JSON client is disabled or LLM_API_KEY is missing.")
+    def complete_json(self, system_prompt: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
+        request_api_key = self._request_api_key(api_key)
         body = {
             "model": self.model,
             "messages": [
@@ -44,7 +44,7 @@ class DeepSeekClient:
             self._enable_thinking(body)
         response = requests.post(
             f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {request_api_key}", "Content-Type": "application/json"},
             json=body,
             timeout=(self.connect_timeout_seconds, self.read_timeout_seconds),
         )
@@ -103,3 +103,11 @@ class DeepSeekClient:
             return
         if provider == "qwen":
             body["enable_thinking"] = True
+
+    def _request_api_key(self, api_key: str | None) -> str:
+        if not self.llm_enabled:
+            raise RuntimeError("LLM JSON client is disabled by HELPDESK_USE_LLM=0.")
+        request_api_key = (api_key or self.default_api_key or "").strip()
+        if not request_api_key:
+            raise RuntimeError("LLM API key is missing. Enter a DeepSeek API key in the frontend or configure LLM_API_KEY on the server.")
+        return request_api_key

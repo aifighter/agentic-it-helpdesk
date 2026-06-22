@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
+
 from backend.app.action_schemas import parse_agent_action
 from backend.app.config import get_manifest
+from backend.app import llm as llm_module
+from backend.app.llm import DeepSeekClient
 from backend.app.planner_contract import tool_schemas
 from backend.app.runtime_executor import execute_tool_action, tool_relevance_warnings, validate_user_scoped_sql
 from backend.app.state import SessionState
@@ -103,6 +107,40 @@ def test_relevance_warning_is_soft() -> None:
     assert result.call.tool == "file_tool"
 
 
+def test_request_scoped_llm_api_key_is_used_without_server_key() -> None:
+    previous_env = {name: os.environ.get(name) for name in ["LLM_API_KEY", "DEEPSEEK_API_KEY", "HELPDESK_USE_LLM"]}
+    previous_post = llm_module.requests.post
+    captured: dict[str, str] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}]}
+
+    def fake_post(url, headers, json, timeout):
+        captured["authorization"] = headers["Authorization"]
+        return FakeResponse()
+
+    try:
+        os.environ["LLM_API_KEY"] = ""
+        os.environ["DEEPSEEK_API_KEY"] = ""
+        os.environ["HELPDESK_USE_LLM"] = "1"
+        llm_module.requests.post = fake_post
+        client = DeepSeekClient()
+        assert client.enabled is False
+        assert client.complete_json("system", {"hello": "world"}, api_key="sk-from-ui") == {"ok": True}
+        assert captured["authorization"] == "Bearer sk-from-ui"
+    finally:
+        llm_module.requests.post = previous_post
+        for name, value in previous_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 TESTS = [
     test_action_schema,
     test_handoff_not_planner_visible,
@@ -110,4 +148,5 @@ TESTS = [
     test_file_allowlist,
     test_http_allowlist,
     test_relevance_warning_is_soft,
+    test_request_scoped_llm_api_key_is_used_without_server_key,
 ]

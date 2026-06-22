@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     user_email: str | None = None
+    llm_api_key: str | None = None
 
 
 class ToolCall(BaseModel):

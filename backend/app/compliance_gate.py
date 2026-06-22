@@ -15,6 +15,7 @@ def check_compliance(
     draft_action_type: str,
     draft: dict[str, Any],
     next_id,
+    llm_api_key: str | None = None,
 ) -> str | None:
     observations = [obs for obs in state.observations if obs.visible][-20:]
     result = checker.check(
@@ -23,6 +24,7 @@ def check_compliance(
         user_messages=state.messages,
         observations=observations,
         tool_calls=tool_calls_from_observations(observations),
+        llm_api_key=llm_api_key,
     )
     obs = Observation(
         id=next_id(),

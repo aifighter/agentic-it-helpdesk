@@ -25,6 +25,7 @@ class ComplianceChecker:
         user_messages: list[dict[str, str]],
         observations: list[Observation],
         tool_calls: list[ToolCall],
+        llm_api_key: str | None = None,
     ) -> dict[str, Any]:
         deterministic = deterministic_compliance_check(
             draft_action_type=draft_action_type,
@@ -44,7 +45,7 @@ class ComplianceChecker:
             "policy_rules": self.policy_rules,
             "risk_guardrails": {"high_risk_terms": self.high_risk_terms},
         }
-        result = self.llm.complete_json(compliance_system_prompt(), payload)
+        result = self.llm.complete_json(compliance_system_prompt(), payload, api_key=llm_api_key)
         return normalize_checker_result(result)
 
 

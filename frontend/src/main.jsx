@@ -62,6 +62,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [latest, setLatest] = useState(null);
   const [llmHealth, setLlmHealth] = useState(null);
+  const [llmApiKey, setLlmApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("flow");
@@ -108,6 +109,7 @@ function App() {
           message: text,
           session_id: sessionId,
           user_email: selectedEmail,
+          llm_api_key: llmApiKey.trim() || null,
         }),
       });
 
@@ -169,7 +171,13 @@ function App() {
       />
 
       <section className="thread-surface" aria-label="IT helpdesk conversation">
-        <ThreadHeader profile={selectedProfile} latest={latest} sessionId={sessionId} llmHealth={llmHealth} />
+        <ThreadHeader
+          profile={selectedProfile}
+          latest={latest}
+          sessionId={sessionId}
+          llmHealth={llmHealth}
+          hasClientApiKey={Boolean(llmApiKey.trim())}
+        />
 
         <div className="thread-scroll" ref={scrollRef}>
           {messages.length === 0 ? (
@@ -217,8 +225,10 @@ function App() {
 
         <Composer
           input={input}
+          llmApiKey={llmApiKey}
           loading={loading}
           onInput={setInput}
+          onApiKey={setLlmApiKey}
           onSubmit={sendMessage}
         />
       </section>
@@ -279,8 +289,8 @@ function Sidebar({ selectedEmail, onSelectProfile, onReset, onUseExample }) {
   );
 }
 
-function ThreadHeader({ profile, latest, sessionId, llmHealth }) {
-  const health = llmHealthLabel(llmHealth);
+function ThreadHeader({ profile, latest, sessionId, llmHealth, hasClientApiKey }) {
+  const health = llmHealthLabel(llmHealth, hasClientApiKey);
   return (
     <header className="thread-header">
       <div>
@@ -299,7 +309,7 @@ function ThreadHeader({ profile, latest, sessionId, llmHealth }) {
   );
 }
 
-function llmHealthLabel(llmHealth) {
+function llmHealthLabel(llmHealth, hasClientApiKey) {
   if (!llmHealth) {
     return { tone: "missing", label: "checking", title: "正在检查后端 /api/llm/health。" };
   }
@@ -310,13 +320,16 @@ function llmHealthLabel(llmHealth) {
       title: llmHealth.last_error || "无法访问后端，请确认 FastAPI 服务已启动。",
     };
   }
+  if (hasClientApiKey && llmHealth.accepts_client_api_key) {
+    return { tone: "configured", label: "client key ready", title: `${llmHealth.model || "LLM"} 将使用本页面输入的 API key。` };
+  }
   if (llmHealth.configured) {
-    return { tone: "configured", label: "configured", title: `${llmHealth.model || "LLM"} 已配置。` };
+    return { tone: "configured", label: "server key configured", title: `${llmHealth.model || "LLM"} 服务端 API key 已配置。` };
   }
   return {
     tone: "missing",
-    label: "missing key",
-    title: "后端已启动，但 LLM_API_KEY 缺失或 HELPDESK_USE_LLM=0。",
+    label: "enter key",
+    title: llmHealth.accepts_client_api_key ? "请输入 DeepSeek API key 后再发送。" : "后端已启动，但 HELPDESK_USE_LLM=0。",
   };
 }
 
@@ -367,7 +380,7 @@ function SourceStrip({ sources }) {
   );
 }
 
-function Composer({ input, loading, onInput, onSubmit }) {
+function Composer({ input, llmApiKey, loading, onInput, onApiKey, onSubmit }) {
   return (
     <form className="composer" onSubmit={onSubmit}>
       <div className="composer-frame">
@@ -379,6 +392,18 @@ function Composer({ input, loading, onInput, onSubmit }) {
           aria-label="员工问题"
         />
         <div className="composer-bar">
+          <label className="api-key-field">
+            <span>DeepSeek API key</span>
+            <input
+              type="password"
+              value={llmApiKey}
+              onChange={(event) => onApiKey(event.target.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+              spellCheck="false"
+              aria-label="DeepSeek API key"
+            />
+          </label>
           <span>DeepSeek planner · Generic runtime</span>
           <button type="submit" disabled={loading || !input.trim()}>
             {loading ? "运行中" : "发送"}

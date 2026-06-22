@@ -7,14 +7,20 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .agent import HelpdeskAgent
+from .config import env
 from .schemas import ChatRequest, ChatResponse
 from .status_api import filter_changes, filter_services
 
 
 app = FastAPI(title="Agentic IT Helpdesk", version="0.1.0")
+cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    *[origin.strip() for origin in (env("CORS_ALLOW_ORIGINS") or "").split(",") if origin.strip()],
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +57,8 @@ def llm_health() -> dict:
     return {
         "planner": "live_llm_structured_json",
         "configured": agent.llm.enabled,
+        "server_key_configured": bool(agent.llm.default_api_key),
+        "accepts_client_api_key": agent.llm.llm_enabled,
         "model": agent.llm.model,
         "base_url": agent.llm.base_url,
         "timeout_seconds": {
@@ -80,6 +88,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         message=request.message,
         user_email=request.user_email,
         session_id=request.session_id,
+        llm_api_key=request.llm_api_key,
     )
 
 
