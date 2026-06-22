@@ -6,20 +6,16 @@ from typing import Any
 
 import requests
 
-from .config import env
-
-
 class DeepSeekClient:
     def __init__(self) -> None:
-        self.default_api_key = env("LLM_API_KEY") or env("DEEPSEEK_API_KEY")
-        self.model = env("LLM_MODEL") or env("DEEPSEEK_MODEL", "deepseek-v4-pro")
-        self.base_url = (env("LLM_BASE_URL") or env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).rstrip("/")
-        self.max_tokens = int(env("LLM_MAX_TOKENS") or env("DEEPSEEK_MAX_TOKENS", "4096"))
-        self.thinking = env("LLM_THINKING") or env("DEEPSEEK_THINKING", "disabled")
-        self.connect_timeout_seconds = float(env("LLM_CONNECT_TIMEOUT_SECONDS") or env("DEEPSEEK_CONNECT_TIMEOUT_SECONDS", "10"))
-        self.read_timeout_seconds = float(env("LLM_READ_TIMEOUT_SECONDS") or env("DEEPSEEK_READ_TIMEOUT_SECONDS", "120"))
+        self.model = os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+        self.base_url = (os.getenv("LLM_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).rstrip("/")
+        self.max_tokens = int(os.getenv("LLM_MAX_TOKENS") or os.getenv("DEEPSEEK_MAX_TOKENS", "4096"))
+        self.thinking = os.getenv("LLM_THINKING") or os.getenv("DEEPSEEK_THINKING", "disabled")
+        self.connect_timeout_seconds = float(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS") or os.getenv("DEEPSEEK_CONNECT_TIMEOUT_SECONDS", "10"))
+        self.read_timeout_seconds = float(os.getenv("LLM_READ_TIMEOUT_SECONDS") or os.getenv("DEEPSEEK_READ_TIMEOUT_SECONDS", "120"))
         self.llm_enabled = os.getenv("HELPDESK_USE_LLM", "1") != "0"
-        self.enabled = self.llm_enabled and bool(self.default_api_key)
+        self.enabled = self.llm_enabled
 
     def plan_action(self, system_prompt: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
         return self.complete_json(system_prompt, payload, api_key=api_key)
@@ -107,7 +103,7 @@ class DeepSeekClient:
     def _request_api_key(self, api_key: str | None) -> str:
         if not self.llm_enabled:
             raise RuntimeError("LLM JSON client is disabled by HELPDESK_USE_LLM=0.")
-        request_api_key = (api_key or self.default_api_key or "").strip()
+        request_api_key = (api_key or "").strip()
         if not request_api_key:
-            raise RuntimeError("LLM API key is missing. Enter a DeepSeek API key in the frontend or configure LLM_API_KEY on the server.")
+            raise RuntimeError("LLM API key is missing. Enter a DeepSeek API key in the frontend.")
         return request_api_key

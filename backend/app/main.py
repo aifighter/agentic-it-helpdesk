@@ -56,8 +56,7 @@ def health() -> dict[str, str]:
 def llm_health() -> dict:
     return {
         "planner": "live_llm_structured_json",
-        "configured": agent.llm.enabled,
-        "server_key_configured": bool(agent.llm.default_api_key),
+        "configured": False,
         "accepts_client_api_key": agent.llm.llm_enabled,
         "model": agent.llm.model,
         "base_url": agent.llm.base_url,
