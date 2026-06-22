@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .llm import DeepSeekClient
+from .risk_guardrails import has_policy_gap_marker
 from .schemas import ComplianceResult, Observation, ToolCall
 from .tools import summarize
 
@@ -91,6 +92,14 @@ def deterministic_compliance_check(
             "confidence": 0.97,
         }
 
+    if draft_action_type == "escalate" and has_policy_gap_marker(draft) and high_risk:
+        return {
+            "compliant": True,
+            "risk_level": "medium",
+            "reason": "Escalation handles an unmodeled high-risk request / policy gap without promising execution.",
+            "required_next_action": "allow",
+            "confidence": 0.94,
+        }
     if draft_action_type == "escalate" and requested_actions:
         missing_policy = sorted(action for action in requested_actions if action not in policy_actions)
         if missing_policy:

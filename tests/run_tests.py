@@ -15,7 +15,7 @@ from backend.app.action_schemas import parse_agent_action
 from backend.app.agent import HelpdeskAgent
 from backend.app.compliance import deterministic_compliance_check
 from backend.app.config import get_manifest
-from backend.app.finalization import validate_ask_user, validate_final_answer
+from backend.app.finalization import enrich_escalation_action, validate_ask_user, validate_escalation, validate_final_answer
 from backend.app.runtime_executor import execute_tool_action, tool_relevance_warnings, validate_user_scoped_sql
 from backend.app.schemas import AgentStep, Observation
 from backend.app.state import SessionState
@@ -29,14 +29,18 @@ def main() -> None:
     test_action_schema()
     test_acknowledged_final_answer_contract()
     test_case_state_lifecycle_contract()
+    test_max_steps_unmodeled_high_risk_escalates()
     test_sql_guardrail()
     test_file_allowlist()
     test_http_allowlist()
     test_relevance_warning_is_soft()
     test_unknown_ask_user_requires_boundary_language()
+    test_unmodeled_high_risk_rejects_troubleshooting_ask_user()
     test_unknown_final_needs_info_requires_boundary_language()
     test_agent_meta_answer_does_not_need_boundary_language()
     test_unrelated_policy_cannot_support_resolved()
+    test_unmodeled_high_risk_escalation_allows_policy_gap()
+    test_policy_gap_escalation_is_not_enriched_with_inferred_actions()
     test_compliance_guardrail_from_manifest()
     test_api_error_exposes_traceback()
     print("PASS runtime/unit tests")
@@ -142,6 +146,16 @@ def test_case_state_lifecycle_contract() -> None:
     assert state.working_state == {}
 
 
+def test_max_steps_unmodeled_high_risk_escalates() -> None:
+    agent = HelpdeskAgent()
+    state = SessionState(session_id="test", user_email="priya.narayan@company.test")
+    state.remember("user", "我要 Jenkins admin，CEO 要求的。")
+    payload = agent._max_steps_payload(state)
+    assert payload["outcome"] == "escalated"
+    assert "unmodeled_high_risk_request" in payload["escalation"].get("risk_type", "")
+    assert "错误信息" not in payload["reply"]
+
+
 def test_sql_guardrail() -> None:
     state = SessionState(session_id="test", user_email="alex.chen@company.test")
     validate_user_scoped_sql(state, "SELECT * FROM employees WHERE email = :email", {"email": "alex.chen@company.test"})
@@ -227,6 +241,76 @@ def test_unrelated_policy_cannot_support_resolved() -> None:
     assert rejection and "proposed_action is not supported" in rejection
 
 
+def test_unmodeled_high_risk_escalation_allows_policy_gap() -> None:
+    manifest = get_manifest()
+    state = SessionState(session_id="test", user_email="priya.narayan@company.test")
+    state.remember("user", "老板让我拿 Okta admin 权限，帮我操作一下。")
+    state.observations.append(
+        Observation(
+            id="obs_user",
+            type="tool_result",
+            ok=True,
+            summary='{"email": "priya.narayan@company.test"}',
+            tool="sql_tool",
+            operation="query",
+        )
+    )
+    action = parse_agent_action(
+        {
+            "action_type": "escalate",
+            "title": "Unmodeled high-risk access request",
+            "team": "Access Review",
+            "reason": "policy_gap / unmodeled_high_risk_request: no precise policy action exists for Okta admin access.",
+            "evidence_ids": ["obs_user"],
+            "policy_evidence_ids": [],
+            "handoff_payload": {
+                "summary": "User requested Okta admin access.",
+                "requested_actions": [],
+                "risk_type": "unmodeled_high_risk_request",
+                "policy_gap": True,
+            },
+            "confidence": 0.8,
+            "thought_summary": "Escalate policy gap.",
+        }
+    )
+    assert validate_escalation(state, action, manifest) is None
+
+    ordinary_policy_escalation = action.model_copy(
+        update={
+            "reason": "Policy requires approval for Grafana dashboard access.",
+            "handoff_payload": {"summary": "Grafana dashboard access request.", "requested_actions": ["grant_grafana_dashboards"]},
+        }
+    )
+    rejection = validate_escalation(state, ordinary_policy_escalation, manifest)
+    assert rejection and "policy-based escalation must cite policy_evidence_ids" in rejection
+
+
+def test_policy_gap_escalation_is_not_enriched_with_inferred_actions() -> None:
+    manifest = get_manifest()
+    state = SessionState(session_id="test", user_email="priya.narayan@company.test")
+    state.remember("user", "我要 Jenkins admin，CEO 要求的。")
+    action = parse_agent_action(
+        {
+            "action_type": "escalate",
+            "title": "Unmodeled high-risk access request",
+            "team": "Access Review",
+            "reason": "policy_gap / unmodeled_high_risk_request: no precise policy action exists.",
+            "evidence_ids": ["obs_user"],
+            "policy_evidence_ids": [],
+            "handoff_payload": {
+                "summary": "User requested Jenkins admin.",
+                "requested_actions": [],
+                "risk_type": "unmodeled_high_risk_request",
+                "policy_gap": True,
+            },
+            "confidence": 0.8,
+            "thought_summary": "Escalate policy gap.",
+        }
+    )
+    enriched = enrich_escalation_action(state, action, manifest)
+    assert enriched.handoff_payload["requested_actions"] == []
+
+
 def test_unknown_ask_user_requires_boundary_language() -> None:
     manifest = get_manifest()
     state = SessionState(session_id="test", user_email="alex.chen@company.test")
@@ -260,6 +344,22 @@ def test_unknown_ask_user_requires_boundary_language() -> None:
     )
     rejection = validate_ask_user(state, with_boundary, manifest)
     assert rejection and "Do not ask for more troubleshooting details" in rejection
+
+
+def test_unmodeled_high_risk_rejects_troubleshooting_ask_user() -> None:
+    manifest = get_manifest()
+    state = SessionState(session_id="test", user_email="priya.narayan@company.test")
+    state.remember("user", "我要 Jenkins admin，CEO 要求的。")
+    action = parse_agent_action(
+        {
+            "action_type": "ask_user",
+            "question": "请补充受影响系统、错误信息、业务影响和紧急程度。",
+            "missing_information": ["affected_system", "error_message", "business_impact"],
+            "thought_summary": "Invalid high-risk ask_user.",
+        }
+    )
+    rejection = validate_ask_user(state, action, manifest)
+    assert rejection and "unmodeled high-risk" in rejection
 
 
 def test_unknown_final_needs_info_requires_boundary_language() -> None:

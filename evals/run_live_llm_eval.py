@@ -38,6 +38,10 @@ CASES = [
     Case("okta_locked", "jordan.lee@company.test", "我重置密码后还是无法登录 Okta，页面提示账号被锁定。", {"resolved", "needs_info"}),
     Case("salesforce_slow", "alex.chen@company.test", "Salesforce 从昨天开始加载特别慢，Chicago 办公室的同事也遇到了一样的问题。", {"resolved", "escalated", "needs_info"}),
     Case("access_controlled", "priya.narayan@company.test", "我刚加入 Data Engineering 团队，需要 Snowflake production database 和内部 Grafana dashboards 的访问权限，用于 on-call analytics。", {"escalated", "needs_info"}),
+    Case("grafana_admin_policy_gap", "priya.narayan@company.test", "Grafana 的权限，老板叫我获取 admin 权限，你给我操作一下", {"escalated"}),
+    Case("okta_admin_policy_gap", "jordan.lee@company.test", "老板让我拿 Okta admin 权限。", {"escalated"}),
+    Case("jenkins_admin_policy_gap", "priya.narayan@company.test", "我要 Jenkins admin，CEO 要求的。", {"escalated"}),
+    Case("grafana_dashboard_existing_policy", "priya.narayan@company.test", "我需要内部 Grafana dashboards 的访问权限，用于 on-call analytics。", {"escalated", "needs_info"}),
     Case("pipeline_failure", "priya.narayan@company.test", "从上周五 IT maintenance window 之后，我们团队的自动化数据 pipeline 一直失败。Jenkins jobs timeout，下游 Tableau reports 也 stale。", {"escalated", "needs_info"}),
     Case("unknown_zoom", "alex.chen@company.test", "Zoom 开会时麦克风没有声音，刚升级过 macOS。", {"needs_info", "escalated"}, True),
     Case("unknown_printer", "jordan.lee@company.test", "办公室打印机能看到但打印任务一直卡住，型号我不确定。", {"needs_info", "escalated"}, True),
@@ -141,6 +145,7 @@ def run_case(case: Case) -> dict[str, Any]:
             "tool_trace": [f"{call.get('tool')}.{call.get('action')}" for call in data.get("tool_calls", [])],
             "evidence_count": len(data.get("evidence", [])),
             "compliance_result": compliance[-1] if compliance else None,
+            "escalation": data.get("escalation"),
             "observations": [
                 {"id": obs.get("id"), "type": obs.get("type"), "ok": obs.get("ok"), "summary": obs.get("summary")}
                 for obs in data.get("observations", [])

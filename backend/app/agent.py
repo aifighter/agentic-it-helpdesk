@@ -33,6 +33,7 @@ from .observations import (
     visible_observations,
 )
 from .planner_contract import planner_payload, planner_system_prompt
+from .risk_guardrails import has_unmodeled_high_risk_text, state_high_risk_text, unmodeled_high_risk_config, configured_high_risk_terms
 from .runtime_executor import execute_tool_action, tool_relevance_warnings
 from .schemas import ChatResponse
 from .state import SessionState
@@ -49,7 +50,7 @@ class HelpdeskAgent:
         self.compliance = ComplianceChecker(
             self.llm,
             self.runtime.policy.rules,
-            self.manifest.get("risk_guardrails", {}).get("high_risk_terms", []),
+            configured_high_risk_terms(self.manifest),
         )
         self.sessions: dict[str, SessionState] = {}
 
@@ -93,15 +94,7 @@ class HelpdeskAgent:
                 continue
 
         if final_payload is None:
-            final_payload = build_ask_user(
-                state,
-                AskUserAction(
-                    action_type="ask_user",
-                    question="我已经完成多步查询，但还不能可靠收敛。请补充受影响系统、错误信息、业务影响和紧急程度。",
-                    missing_information=["affected_system", "error_or_symptom", "business_impact"],
-                    thought_summary="达到 max_steps，转为明确追问以避免编造结论。",
-                ),
-            )
+            final_payload = self._max_steps_payload(state)
 
         state.remember("assistant", final_payload["reply"])
         response = self._response(state, start_index, observation_start_index, final_payload)
@@ -142,7 +135,7 @@ class HelpdeskAgent:
 
     def _try_escalation(self, state: SessionState, action: EscalateAction) -> dict[str, Any] | None:
         action = enrich_escalation_action(state, action, self.manifest)
-        if rejection := validate_escalation(state, action):
+        if rejection := validate_escalation(state, action, self.manifest):
             self._record_runtime_rejection(state, rejection, "escalate 被 runtime 拒绝，planner 必须补充 handoff 所需证据。")
             return None
         if rejection := check_compliance(state=state, checker=self.compliance, draft_action_type="escalate", draft=action.model_dump(), next_id=self._next_observation_id):
@@ -160,6 +153,43 @@ class HelpdeskAgent:
         for warning in warnings:
             obs = runtime_warning(self._next_observation_id(), warning, thought)
             state.observations.append(obs)
+
+    def _max_steps_payload(self, state: SessionState) -> dict[str, Any]:
+        if has_unmodeled_high_risk_text(self.manifest, state_high_risk_text(state)):
+            config = unmodeled_high_risk_config(self.manifest)
+            obs = self._record_runtime_rejection(
+                state,
+                "max_steps reached for unmodeled_high_risk_request / policy_gap; escalating instead of asking troubleshooting questions.",
+                "达到 max_steps，但上下文是未建模高风险请求，转为人工升级。",
+            )
+            action = EscalateAction(
+                action_type="escalate",
+                title="Unmodeled high-risk request",
+                team=config.get("escalation_team") or "Access Review",
+                reason="policy_gap / unmodeled_high_risk_request: configured high-risk access/change semantics were detected, but no precise allowed policy action can support direct resolution.",
+                evidence_ids=[obs.id],
+                policy_evidence_ids=[],
+                handoff_payload={
+                    "summary": state.messages[-1]["content"] if state.messages else "Unmodeled high-risk request",
+                    "requested_actions": [],
+                    "risk_type": "unmodeled_high_risk_request",
+                    "policy_gap": True,
+                },
+                confidence=0.78,
+                thought_summary="未建模高风险请求不能继续追问排障字段，升级给人工审批。",
+            )
+            payload = self._try_escalation(state, action)
+            if payload:
+                return payload
+        return build_ask_user(
+            state,
+            AskUserAction(
+                action_type="ask_user",
+                question="我已经完成多步查询，但还不能可靠收敛。请补充受影响系统、错误信息、业务影响和紧急程度。",
+                missing_information=["affected_system", "error_or_symptom", "business_impact"],
+                thought_summary="达到 max_steps，转为明确追问以避免编造结论。",
+            ),
+        )
 
     def _response(self, state: SessionState, start_index: int, observation_start_index: int, final_payload: dict[str, Any]) -> ChatResponse:
         step_slice = state.steps[start_index:]

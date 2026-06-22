@@ -113,6 +113,23 @@ visible_reasoning_policy:
     - inaccessible internal data
 
 risk_guardrails:
+  unmodeled_high_risk_escalation:
+    enabled: true
+    escalation_team: Access Review
+    terms:
+      - "\\badmin\\b"
+      - "\\badministrator\\b"
+      - "\\bprivileged access\\b"
+      - "\\bowner access\\b"
+      - "\\bsuper admin\\b"
+      - "管理员"
+      - "admin\\s*权限"
+      - "超级管理员"
+      - "owner\\s*权限"
+      - "老板.*要求"
+      - "ceo.*要求"
+      - "老板叫"
+      - "ceo叫"
   high_risk_terms:
     - "\\bgrant\\b.*\\baccess\\b"
     - "\\bgrant\\b.*\\bpermission\\b"
