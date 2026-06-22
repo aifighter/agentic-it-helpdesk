@@ -3,7 +3,7 @@
 	# email your-email@example.com
 }
 
-{$PUBLIC_HOST:localhost} {
+{$PUBLIC_HOST::80} {
 	basicauth {
 		interviewer "$2y$14$3d42CNhiBMyXBmUAYiOyX.w3.drjFDIktUZnPJ5R3UJPu3.dAOTrC"
 	}
@@ -13,6 +13,8 @@
 	}
 
 	handle {
-		reverse_proxy 127.0.0.1:5173
+		root * {$FRONTEND_ROOT:/opt/agentic-it-helpdesk/frontend/dist}
+		try_files {path} /index.html
+		file_server
 	}
 }
